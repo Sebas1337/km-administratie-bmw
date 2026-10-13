@@ -1,10 +1,10 @@
-# Voorbeeld-stamdata (verzonnen coördinaten). Kopieer naar data/stamdata.toml (gitignored) en vul
-# je eigen gegevens in. Inlezen: uv run kmlog stamdata data/stamdata.toml
+# Voorbeeld-stamdata: auto, locaties (nep-coördinaten) en routes zijn verzonnen. Kopieer naar
+# data/stamdata.toml (gitignored) en vul je eigen gegevens in. Inlezen: uv run kmlog stamdata data/stamdata.toml
 # (of met --store dynamodb in AWS). Daarna kun je locaties en routes ook in de webinterface beheren.
 
 # De auto waarvoor je km-vergoeding declareert; komt in de kop van de maandstaat.
 [vehicle]
-name = "BMW i4"
+name = "BMW"
 plate = "AB-123-C"
 
 # Locaties: type = home | client | business | private; radius_m (default 200) bepaalt hoe dicht

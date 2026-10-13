@@ -7,7 +7,7 @@
 <div class="card">
   <form method="post" action="/instellingen/voertuig" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <div><label>Naam (in de kop van de maandstaat)</label><input name="name" value="{{ vehicle.name if vehicle else '' }}" required maxlength="60" placeholder="BMW i4"></div>
+    <div><label>Naam (in de kop van de maandstaat)</label><input name="name" value="{{ vehicle.name if vehicle else '' }}" required maxlength="60" placeholder="BMW"></div>
     <div><label>Kenteken</label><input name="plate" value="{{ vehicle.plate if vehicle else '' }}" maxlength="20" placeholder="AB-123-C"></div>
     <div><button>Opslaan</button></div>
   </form>
