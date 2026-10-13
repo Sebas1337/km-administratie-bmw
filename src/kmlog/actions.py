@@ -7,6 +7,7 @@ so the result survives the next hourly poll. No CarData API call is ever made he
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import secrets
 import unicodedata
@@ -25,6 +26,7 @@ from .model import (
     LocationType,
     Rate,
     Route,
+    Settings,
     Vehicle,
     VehicleKind,
 )
@@ -389,3 +391,24 @@ def save_rate(store: Store, *, year: int, euros: str) -> Rate:
     rate = Rate(year, int(cents))
     store.put_rate(rate)
     return rate
+
+
+def delete_rate(store: Store, year: int) -> None:
+    if store.rate(year) is None:
+        raise ActionError("Voor dat jaar is geen tarief ingesteld.")
+    store.delete_rate(year)
+
+
+def save_poll_window(store: Store, *, start_hour: int, end_hour: int, quota_limit: int) -> Settings:
+    if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+        raise ActionError("Kies hele uren van 0 tot en met 23.")
+    current = store.settings()
+    settings = Settings(poll_start_hour=start_hour, poll_end_hour=end_hour)
+    polls, room = len(settings.poll_hours), quota_limit - 5
+    if polls > room:
+        raise ActionError(
+            f"Dat zijn {polls} metingen per dag; er passen er {room} in het dagquotum. "
+            "Kies een korter venster."
+        )
+    store.put_settings(dataclasses.replace(current, **dataclasses.asdict(settings)))
+    return settings

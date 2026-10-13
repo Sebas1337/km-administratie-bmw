@@ -1,35 +1,69 @@
 {% extends "base.html" %}
-{% block title %}Stamdata{% endblock %}
+{% block title %}Instellingen{% endblock %}
 {% block content %}
-<h1>Stamdata</h1>
-<p class="muted">Wijzigingen gelden direct; na een wijziging in locaties of routes worden de ritten van de afgelopen maand opnieuw berekend.</p>
+<h1>Instellingen</h1>
 
-<h2>Auto en vergoeding</h2>
+<h2>Auto</h2>
 <div class="card">
-  <form method="post" action="/stamdata/voertuig" class="grid">
+  <form method="post" action="/instellingen/voertuig" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <div><label>Auto (in de kop van de maandstaat)</label><input name="name" value="{{ vehicle.name if vehicle else '' }}" required maxlength="60" placeholder="BMW i4"></div>
+    <div><label>Naam (in de kop van de maandstaat)</label><input name="name" value="{{ vehicle.name if vehicle else '' }}" required maxlength="60" placeholder="BMW i4"></div>
     <div><label>Kenteken</label><input name="plate" value="{{ vehicle.plate if vehicle else '' }}" maxlength="20" placeholder="AB-123-C"></div>
     <div><button>Opslaan</button></div>
   </form>
 </div>
+
+<h2>Vergoeding per km</h2>
+<p class="muted">Per kalenderjaar: de maanden van een jaar gebruiken het tarief van dat jaar. Heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar. Een wijziging werkt direct door in de maand- en jaaroverzichten en in elke Excel die je daarna maakt; al verstuurde maandstaten worden niet opnieuw gemaild. De kilometers veranderen niet.</p>
 <div class="card">
-  <p>Vergoeding {{ this_year }}: <strong>{{ current_rate.cents_per_km|euro if current_rate else "nog niet ingesteld" }}</strong> per km{% if current_rate and not rates|selectattr("year", "equalto", this_year)|list %} <span class="muted">(van een eerder jaar)</span>{% endif %}.
-    {% if rates %}<span class="muted">Ingesteld: {% for r in rates %}{{ r.year }} {{ r.cents_per_km|euro }}{% if not loop.last %} · {% endif %}{% endfor %}. Een jaar zonder tarief gebruikt het laatste eerdere.</span>{% endif %}</p>
-  <form method="post" action="/stamdata/tarief" class="grid">
+  <div class="scroll"><table>
+    <thead><tr><th>Jaar</th><th>Per km</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rates %}
+    <tr>
+      <td>{{ r.year }}</td>
+      <td><form class="inline" method="post" action="/instellingen/tarief">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="year" value="{{ r.year }}">
+        <input name="euros" value="{{ ('%.2f'|format(r.cents_per_km / 100))|replace('.', ',') }}" inputmode="decimal" required size="6" aria-label="Vergoeding per km in {{ r.year }}">
+        <button class="secondary">Opslaan</button></form></td>
+      <td><form class="inline" method="post" action="/instellingen/tarief/verwijder">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="year" value="{{ r.year }}">
+        <button class="danger">Verwijderen</button></form></td>
+    </tr>
+    {% endfor %}
+    {% if current_rate and current_rate.year not in rate_years %}
+    <tr class="muted"><td>{{ this_year }}</td><td colspan="2">{{ current_rate.cents_per_km|euro }} (van een eerder jaar)</td></tr>
+    {% endif %}
+    {% if not rates %}<tr><td colspan="3" class="muted">Nog geen tarief: zonder tarief kan er geen maandstaat worden gemaakt.</td></tr>{% endif %}
+    </tbody>
+  </table></div>
+  <form method="post" action="/instellingen/tarief" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <div><label>Jaar</label><input name="year" value="{{ this_year }}" inputmode="numeric" required></div>
+    <div><label>Jaar toevoegen</label><input name="year" value="{{ next_rate_year }}" inputmode="numeric" required></div>
     <div><label>Vergoeding per km (€)</label><input name="euros" value="{{ ('%.2f'|format(current_rate.cents_per_km / 100))|replace('.', ',') if current_rate else '0,23' }}" inputmode="decimal" required></div>
-    <div><button>Opslaan</button></div>
+    <div><button>Toevoegen</button></div>
   </form>
 </div>
 
+<h2>Uitlezen</h2>
+<p class="muted">De auto wordt elk heel uur binnen dit venster uitgelezen (Nederlandse tijd, beide uren inbegrepen). Rijd je ook 's nachts, kies dan 0 tot en met 23. Elke meting is één van de {{ quota_limit }} BMW-calls per dag die km-admin zichzelf toestaat (BMW: 50).</p>
+<div class="card">
+  <form method="post" action="/instellingen/uitlezen" class="grid">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div><label>Van</label><select name="start_hour">{% for h in range(24) %}<option value="{{ h }}" {% if h == settings.poll_start_hour %}selected{% endif %}>{{ '%02d:00'|format(h) }}</option>{% endfor %}</select></div>
+    <div><label>Tot en met</label><select name="end_hour">{% for h in range(24) %}<option value="{{ h }}" {% if h == settings.poll_end_hour %}selected{% endif %}>{{ '%02d:00'|format(h) }}</option>{% endfor %}</select></div>
+    <div><button>Opslaan</button></div>
+  </form>
+  <p class="muted small">Nu: {{ settings.poll_hours|length }} metingen per dag{% if settings.poll_end_hour < settings.poll_start_hour %}, over middernacht{% endif %}.</p>
+</div>
+
 <h2>Locaties</h2>
+<p class="muted">Na een wijziging in locaties of routes worden de ritten van de afgelopen maand opnieuw berekend.</p>
 {% for loc in locations %}
 <details class="card">
   <summary><strong>{{ loc.name }}</strong> <span class="muted">— {{ LOCATION_TYPES[loc.type.value] }}, straal {{ loc.radius_m }} m</span>
     · <a href="{{ (loc.lat, loc.lon)|osm }}" rel="noreferrer" target="_blank">kaart</a></summary>
-  <form method="post" action="/stamdata/locatie" class="grid">
+  <form method="post" action="/instellingen/locatie" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ loc.id }}">
     <div><label>Naam</label><input name="name" value="{{ loc.name }}" required maxlength="80"></div>
     <div><label>Soort</label><select name="type">{% for v, label in LOCATION_TYPES.items() %}<option value="{{ v }}" {% if v == loc.type.value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
@@ -38,14 +72,14 @@
     <div><label>Straal (m)</label><input name="radius_m" value="{{ loc.radius_m }}" inputmode="numeric"></div>
     <div><button>Opslaan</button></div>
   </form>
-  <form method="post" action="/stamdata/locatie/verwijder">
+  <form method="post" action="/instellingen/locatie/verwijder">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ loc.id }}">
     <button class="danger">Locatie (en haar routes) verwijderen</button>
   </form>
 </details>
 {% endfor %}
 <details class="card"><summary>Locatie toevoegen</summary>
-  <form method="post" action="/stamdata/locatie" class="grid">
+  <form method="post" action="/instellingen/locatie" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div><label>Naam</label><input name="name" required maxlength="80"></div>
     <div><label>Soort</label><select name="type">{% for v, label in LOCATION_TYPES.items() %}<option value="{{ v }}" {% if v == "business" %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
@@ -61,7 +95,7 @@
 {% for r in routes %}
 <details class="card">
   <summary><strong>{{ names.get(r.location_a, r.location_a) }} ↔ {{ names.get(r.location_b, r.location_b) }}</strong>: {{ r.name }}, {{ r.distance_km }} km{% if r.is_default %} <span class="badge">standaard</span>{% endif %}</summary>
-  <form method="post" action="/stamdata/route" class="grid">
+  <form method="post" action="/instellingen/route" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ r.id }}">
     <input type="hidden" name="from" value="{{ r.location_a }}"><input type="hidden" name="to" value="{{ r.location_b }}">
     <div><label>Naam</label><input name="name" value="{{ r.name }}" maxlength="60"></div>
@@ -69,7 +103,7 @@
     <div><label><input type="checkbox" name="default" value="1" {% if r.is_default %}checked{% endif %}> standaardroute</label></div>
     <div><button>Opslaan</button></div>
   </form>
-  <form method="post" action="/stamdata/route/verwijder">
+  <form method="post" action="/instellingen/route/verwijder">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ r.id }}">
     <button class="danger">Route verwijderen</button>
   </form>
@@ -77,7 +111,7 @@
 {% endfor %}
 {% if locations|length >= 2 %}
 <details class="card"><summary>Route toevoegen</summary>
-  <form method="post" action="/stamdata/route" class="grid">
+  <form method="post" action="/instellingen/route" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div><label>Van</label><select name="from">{% for loc in locations %}<option value="{{ loc.id }}">{{ loc.name }}</option>{% endfor %}</select></div>
     <div><label>Naar</label><select name="to">{% for loc in locations %}<option value="{{ loc.id }}" {% if loop.index == 2 %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}</select></div>

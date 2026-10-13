@@ -30,7 +30,7 @@ en op de 1e van de maand komt de maandstaat in je mail.
 - **Maandstaat en jaaroverzicht** als Excel, met per dag de route, gereden, zakelijke en
   privé-kilometers en de kilometerstand. Het tarief per km stel je per jaar in.
 - **Webinterface** voor telefoon en desktop: maand-, dag- en jaaroverzicht, kaartjes van
-  elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), stamdata, en
+  elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), instellingen, en
   het koppelen van de auto. Inloggen gaat zonder wachtwoord, met een link per mail.
 - **Draait in je eigen AWS-account**, serverless, voor een paar euro per maand. Er gaat
   niets naar derden behalve de kaarttegels van OpenStreetMap in je browser.
@@ -39,9 +39,9 @@ en op de 1e van de maand komt de maandstaat in je mail.
 |---|---|
 | <img src="docs/screenshots/day.png" alt="Dagpagina: drie ritten met kaartjes, km-standen en een vraag over een tussenstop" width="420"> | <img src="docs/screenshots/month-trips.png" alt="Alle ritten van een maand met vertrek, aankomst en kilometerstand" width="420"> |
 
-| Auto koppelen | Stamdata: auto, vergoeding, locaties |
+| Auto koppelen | Instellingen: auto, vergoeding per jaar, uitlezen |
 |---|---|
-| <img src="docs/screenshots/car-link.png" alt="Pagina Auto: CarData Client ID invullen en koppelen" width="420"> | <img src="docs/screenshots/stamdata.png" alt="Stamdata: auto, kenteken, vergoeding per km en locaties" width="420"> |
+| <img src="docs/screenshots/car-link.png" alt="Pagina Auto: CarData Client ID invullen en koppelen" width="420"> | <img src="docs/screenshots/instellingen.png" alt="Instellingen: auto, kenteken, vergoeding per km per jaar en het uitleesvenster" width="420"> |
 
 *(De screenshots tonen verzonnen ritten tussen openbare plekken.)*
 
@@ -57,10 +57,11 @@ flowchart LR
   DB --> R[Lambda kmlog-report<br/>1e van de maand] --> S3[(S3: maandstaten)] & Mail
 ```
 
-1. **Pollen.** Elk heel uur haalt de poller kilometerstand en positie op, standaard van 06:00
-   tot en met 23:00 (18 calls per dag). Rijd je ook 's nachts, zet dan `poll_start_hour = 0` in
-   `terraform.tfvars` (24 calls per dag). BMW staat 50 API-calls per 24 uur toe; km-admin stopt
-   zichzelf bij 40, en Terraform weigert een venster dat daar niet ruim in past.
+1. **Pollen.** Elk heel uur haalt de poller kilometerstand en positie op, binnen een venster
+   dat je in de webinterface instelt (**Instellingen → Uitlezen**). Standaard is dat 06:00 tot en
+   met 23:00, 18 calls per dag. Rijd je ook 's nachts, kies dan 00:00 tot en met 23:00 (24 calls).
+   BMW staat 50 API-calls per 24 uur toe; km-admin stopt zichzelf bij 40 en weigert een venster
+   dat daar niet ruim in past.
 2. **Ritten afleiden.** Zolang de kilometerstand gelijk blijft, staat de auto stil. Tussen
    twee stilstanden ligt een rit met precies het verschil in kilometerstand.
 3. **Classificeren.** Ritten worden vergeleken met je bekende routes (±5 km). Wat niet past,
@@ -146,7 +147,6 @@ Zet `report_email` (en eventuele andere variabelen uit
 ```hcl
 report_email = "jij@jouwdomein.nl"
 # alert_email = "andere@jouwdomein.nl"   # alarmen en budget, standaard report_email
-# poll_start_hour = 0                     # ook 's nachts pollen (standaard 6 t/m 23)
 ```
 
 ### 5. Mail activeren
@@ -193,13 +193,17 @@ de Lambdas gebruikt. Je BMW-wachtwoord komt nooit in km-admin. De volgende poll 
 uur) haalt de eerste kilometerstand op. Ontkoppelen kan op dezelfde pagina; je ritten blijven
 dan bewaard.
 
-### 8. Stamdata invullen
+### 8. Instellingen invullen
 
-Ga naar **Stamdata**:
+Ga naar **Instellingen**:
 
-- **Auto en vergoeding**: naam en kenteken (komen in de kop van de maandstaat) en de
-  vergoeding per km per jaar. Heeft een jaar geen eigen tarief, dan geldt het tarief van het
-  laatste eerdere jaar.
+- **Auto**: naam en kenteken. Die komen in de kop van de maandstaat.
+- **Vergoeding per km**: per kalenderjaar. De maanden van een jaar gebruiken het tarief van dat
+  jaar; heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar. Je kunt
+  dus meerdere jaren vastleggen, en een nieuw jaar hoef je alleen toe te voegen als het tarief
+  verandert. Een wijziging werkt direct door in de overzichten en in elke Excel die je daarna
+  maakt; al verstuurde maandstaten worden niet opnieuw gemaild.
+- **Uitlezen**: het venster waarin de auto elk uur wordt uitgelezen (standaard 06:00–23:00).
 - **Locaties**: in elk geval **Thuis** en je klant of kantoor, met coördinaten (rechtsklik in
   Google Maps → kopieer de coördinaten). Een onbekende stop kun je ook later vanuit een vraag
   als locatie opslaan.
@@ -207,7 +211,7 @@ Ga naar **Stamdata**:
   standaardroute per paar. Heb je bij file een vaste alternatieve route, voeg die dan ook toe.
   Zo'n rit telt dan zonder vraag als zakelijk.
 
-Liever alles in een bestand? Kopieer
+Liever auto, tarieven, locaties en routes in een bestand? Kopieer
 [`data/samples/stamdata.example.toml`](data/samples/stamdata.example.toml) naar
 `data/stamdata.toml` en laad het met `uv run kmlog --store dynamodb stamdata`.
 

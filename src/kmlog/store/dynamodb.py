@@ -24,7 +24,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 
-from ..model import DayNote, Leg, LegSource, Location, Observation, Rate, Route, Vehicle
+from ..model import DayNote, Leg, LegSource, Location, Observation, Rate, Route, Settings, Vehicle
 from .codec import dumps, loads
 
 CONFIG_PK = "CONFIG"
@@ -104,6 +104,15 @@ class DynamoDbStore:
 
     def rates(self) -> list[Rate]:
         return sorted(self._config("rate", Rate), key=lambda r: r.year)
+
+    def delete_rate(self, year: int) -> None:
+        self.table.delete_item(Key={"PK": CONFIG_PK, "SK": f"rate#{year}"})
+
+    def put_settings(self, settings: Settings) -> None:
+        self._put_config("settings", "main", settings)
+
+    def settings(self) -> Settings:
+        return self._config_one("settings", Settings, "main") or Settings()
 
     def put_location(self, location: Location) -> None:
         self._put_config("location", location.id, location)

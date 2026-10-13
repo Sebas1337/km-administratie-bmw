@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from ..model import DayNote, Leg, LegSource, Location, Observation, Rate, Route, Vehicle
+from ..model import DayNote, Leg, LegSource, Location, Observation, Rate, Route, Settings, Vehicle
 from .codec import dumps, loads
 
 SCHEMA = """
@@ -87,6 +87,17 @@ class SqliteStore:
 
     def rates(self) -> list[Rate]:
         return sorted(self._config("rate", Rate), key=lambda r: r.year)
+
+    def delete_rate(self, year: int) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM config WHERE kind = 'rate' AND id = ?", (str(year),))
+
+    def put_settings(self, settings: Settings) -> None:
+        self._put_config("settings", "main", settings)
+
+    def settings(self) -> Settings:
+        found = self._config("settings", Settings, "main")
+        return found[0] if found else Settings()
 
     def put_location(self, location: Location) -> None:
         self._put_config("location", location.id, location)

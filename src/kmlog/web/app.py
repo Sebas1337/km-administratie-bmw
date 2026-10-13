@@ -8,11 +8,12 @@ Routes
     GET  /maand/YYYY-MM.xlsx      maandstaat als Excel
     GET  /dag/YYYY-MM-DD          ritten van één dag: corrigeren, handmatige rit, vragen
     GET  /jaar/YYYY               jaaroverzicht
-    GET  /stamdata                auto, tarieven, locaties en routes
+    GET  /instellingen            auto, tarieven, uitlees-venster, locaties, routes (was /stamdata)
     GET  /auto                    BMW CarData koppelen / ontkoppelen (kmlog.carlink)
     POST /antwoord, /antwoord/herstel, /stop, /correctie, /correctie/herstel, /rit,
-         /rit/verwijder, /stamdata/voertuig, /stamdata/tarief, /stamdata/locatie,
-         /stamdata/locatie/verwijder, /stamdata/route, /stamdata/route/verwijder,
+         /rit/verwijder, /instellingen/voertuig, /instellingen/tarief,
+         /instellingen/tarief/verwijder, /instellingen/uitlezen, /instellingen/locatie,
+         /instellingen/locatie/verwijder, /instellingen/route, /instellingen/route/verwijder,
          /auto/koppelen, /auto/bevestigen, /auto/voertuig, /auto/annuleren, /auto/ontkoppelen,
          /uitloggen
     GET  /login, POST /login (mail link), GET+POST /login/bevestig
@@ -101,7 +102,7 @@ OK_MESSAGES = {
     "correctie": "Correctie opgeslagen.",
     "rit": "Rit toegevoegd.",
     "verwijderd": "Verwijderd.",
-    "stamdata": "Stamdata opgeslagen; de afgelopen maand is opnieuw berekend.",
+    "stamdata": "Opgeslagen; de ritten van de afgelopen maand zijn opnieuw berekend.",
     "stop": "Locatie opgeslagen en de rit opnieuw berekend.",
     "opgeslagen": "Opgeslagen.",
     "code": "Bevestig de koppeling op de BMW-pagina en kom dan hier terug.",
@@ -254,6 +255,7 @@ class WebApp:
         mailer: Mailer,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         cardata: Callable[[], CarDataClient] | None = None,
+        quota_limit: int = 40,
     ) -> None:
         self.store = store
         self.auth = auth
@@ -261,6 +263,7 @@ class WebApp:
         self.mailer = mailer
         self.now = now
         self.cardata = cardata  # None: no Secrets Manager (local use), the Auto page says so
+        self.quota_limit = quota_limit  # own daily CarData limit, as QUOTA_LIMIT of the poller
 
     def __call__(self, event: dict) -> dict:
         return self.handle(Request.from_event(event)).to_lambda()
@@ -312,8 +315,10 @@ class WebApp:
             return self.day(req, session, day)
         if m := re.fullmatch(r"/jaar/(\d{4})", path):
             return self.year(req, session, int(m.group(1)))
-        if path == "/stamdata":
-            return self.stamdata(req, session)
+        if path == "/instellingen":
+            return self.settings_page(req, session)
+        if path == "/stamdata":  # old name, kept for bookmarks
+            return redirect("/instellingen")
         if path == "/auto":
             return self.car(req, session)
         return self.not_found(session)
@@ -365,15 +370,26 @@ class WebApp:
                 day = _date(f.get("date"))
                 actions.delete_manual_trip(store, v, f.get("leg", ""), day)
                 return redirect(_with_ok(f"/dag/{day}", "verwijderd"))
-            case "/stamdata/voertuig":
+            case "/instellingen/voertuig":
                 actions.save_vehicle(store, v, name=f.get("name", ""), plate=f.get("plate", ""))
-                return redirect(_with_ok("/stamdata", "opgeslagen"))
-            case "/stamdata/tarief":
+                return redirect(_with_ok("/instellingen", "opgeslagen"))
+            case "/instellingen/tarief":
                 actions.save_rate(store, year=_int(f.get("year"), 0), euros=f.get("euros", ""))
-                return redirect(_with_ok("/stamdata", "opgeslagen"))
+                return redirect(_with_ok("/instellingen", "opgeslagen"))
+            case "/instellingen/tarief/verwijder":
+                actions.delete_rate(store, _int(f.get("year"), 0))
+                return redirect(_with_ok("/instellingen", "verwijderd"))
+            case "/instellingen/uitlezen":
+                actions.save_poll_window(
+                    store,
+                    start_hour=_int(f.get("start_hour"), -1),
+                    end_hour=_int(f.get("end_hour"), -1),
+                    quota_limit=self.quota_limit,
+                )
+                return redirect(_with_ok("/instellingen", "opgeslagen"))
             case path if path.startswith("/auto/"):
                 return self._car_post(path, f)
-            case "/stamdata/locatie":
+            case "/instellingen/locatie":
                 actions.save_location(
                     store,
                     name=f.get("name", ""),
@@ -383,11 +399,11 @@ class WebApp:
                     radius_m=_int(f.get("radius_m"), 200),
                     id_=f.get("id") or None,
                 )
-                return self._stamdata_changed(now)
-            case "/stamdata/locatie/verwijder":
+                return self._places_changed(now)
+            case "/instellingen/locatie/verwijder":
                 actions.delete_location(store, f.get("id", ""))
-                return self._stamdata_changed(now)
-            case "/stamdata/route":
+                return self._places_changed(now)
+            case "/instellingen/route":
                 actions.save_route(
                     store,
                     location_a=f.get("from", ""),
@@ -397,10 +413,10 @@ class WebApp:
                     is_default=f.get("default") == "1",
                     id_=f.get("id") or None,
                 )
-                return self._stamdata_changed(now)
-            case "/stamdata/route/verwijder":
+                return self._places_changed(now)
+            case "/instellingen/route/verwijder":
                 actions.delete_route(store, f.get("id", ""))
-                return self._stamdata_changed(now)
+                return self._places_changed(now)
         return self.not_found(session)
 
     def _car_post(self, path: str, f: dict[str, str]) -> Response:
@@ -428,12 +444,12 @@ class WebApp:
                 raise ActionError("Onbekende actie.")
         return redirect(_with_ok("/auto", key))
 
-    def _stamdata_changed(self, now: datetime) -> Response:
+    def _places_changed(self, now: datetime) -> Response:
         today = amsterdam_date(now)
         reprocess(
             self.store, self.vehicle, today - timedelta(days=STAMDATA_REPROCESS_DAYS), today, now
         )
-        return redirect(_with_ok("/stamdata", "stamdata"))
+        return redirect(_with_ok("/instellingen", "stamdata"))
 
     # --- login ----------------------------------------------------------------------------
 
@@ -626,16 +642,22 @@ class WebApp:
             ok=OK_MESSAGES.get(req.query.get("ok", "")),
         )
 
-    def stamdata(self, req: Request, session: Session) -> Response:
+    def settings_page(self, req: Request, session: Session) -> Response:
         locations = self.store.locations()
         this_year = amsterdam_date(self.now()).year
+        rates = self.store.rates()
+        rate_years = {r.year for r in rates}
         return self.page(
-            "stamdata.html",
+            "instellingen.html",
             session,
             vehicle=self.store.vehicle(self.vehicle),
-            rates=self.store.rates(),
+            rates=rates,
+            rate_years=rate_years,
+            next_rate_year=this_year if this_year not in rate_years else max(rate_years) + 1,
             this_year=this_year,
             current_rate=rate_for(self.store, this_year),
+            settings=self.store.settings(),
+            quota_limit=self.quota_limit,
             locations=locations,
             routes=self.store.routes(),
             names={loc.id: loc.name for loc in locations},

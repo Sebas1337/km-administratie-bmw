@@ -36,6 +36,7 @@ def _app():
         env("VEHICLE_ID", "car"),
         lambda subject, body: send_mail(ses, address, subject, body),
         cardata=lambda: cardata.CarDataClient(tokens, before_api_call=quota_guard(store, quota)),
+        quota_limit=quota,
     )
 
 

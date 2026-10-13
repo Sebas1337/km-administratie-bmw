@@ -10,12 +10,12 @@ Serverless, standaard in regio `eu-central-1`, alles met de naam `kmlog-*`:
 | Secrets Manager | `kmlog/cardata` | BMW Client ID, roterende tokens, VIN, container id; geschreven door de webinterface (pagina *Auto*) en de poller, nooit door Terraform |
 | Secrets Manager | `kmlog/web` | sleutel voor sessiecookies (door Terraform gegenereerd) |
 | S3 | `kmlog-reports-<account>-<regio>` | maandstaten `reports/<jaar>/…xlsx` |
-| Lambda | `kmlog-poller` | elk uur `poll_start_hour`–`poll_end_hour` (Amsterdam, standaard 06–23): token refresh, quotum, telematicData → observatie → legs |
+| Lambda | `kmlog-poller` | elk uur; binnen het venster uit de webinterface (Instellingen → Uitlezen, standaard 06–23): token refresh, quotum, telematicData → observatie → legs |
 | Lambda | `kmlog-report` | 1e van de maand 06:00: maandstaat (+ jaaroverzicht in januari) → S3 + mail |
 | Lambda + Function URL | `kmlog-web` | webinterface; inloggen met maillink; output `web_url` |
 | Lambda | `kmlog-notify` | dagelijks 20:00: nieuwe vragen mailen, vragen ouder dan 7 dagen laten verlopen |
-| Scheduler | `kmlog-poll`, `kmlog-monthly-report`, `kmlog-notify` | cron in `Europe/Amsterdam`; geen retries op de poller (quotum) |
-| CloudWatch/SNS | `kmlog-alerts` + alarms | fouten van poller/report/web/notify, minder dan ⅔ van de geplande polls in 24 uur |
+| Scheduler | `kmlog-poll` (elk uur), `kmlog-monthly-report`, `kmlog-notify` | cron in `Europe/Amsterdam`; geen retries op de poller (quotum) |
+| CloudWatch/SNS | `kmlog-alerts` + alarms | fouten van poller/report/web/notify, poller minder dan 16 keer aangeroepen in 24 uur |
 | Budgets | `kmlog-monthly` | mail bij > 80% (prognose) / 100% van $5 per maand, alleen kosten met tag `project=kmlog` (tag eenmalig activeren: Billing → Cost allocation tags) |
 
 IAM: elke rol krijgt de permissions boundary `kmlog-boundary` (variabele
@@ -33,7 +33,6 @@ Zie [`variables.tf`](variables.tf); zet ze in `infra/terraform.tfvars` (gitignor
 | `alert_email` | `report_email` | alarmen en budget |
 | `region` | `eu-central-1` | zie *Andere regio* |
 | `vehicle_id` | `car` | sleutel van observaties/legs; gelijk aan `kmlog --vehicle` |
-| `poll_start_hour`, `poll_end_hour` | `6`, `23` | poll-venster op het hele uur, grenzen inbegrepen; `0`/`23` = de hele dag (24 calls), `18`/`2` = over middernacht. Moet passen in `quota_limit` − 5 |
 | `quota_limit` | `40` | max CarData-calls per UTC-dag (BMW: 50) |
 | `monthly_budget_usd` | `5` | |
 | `boundary_policy_name` | `kmlog-boundary` | naam van de boundary-policy uit `iam/` |
@@ -60,7 +59,8 @@ uv run kmlog --store dynamodb stamdata data/stamdata.toml            # bestand �
 
 ```sh
 aws logs tail /aws/lambda/kmlog-poller --since 1d     # één JSON-regel per poll, zonder coördinaten
-aws lambda invoke --function-name kmlog-poller /dev/stdout
+aws lambda invoke --function-name kmlog-poller --cli-binary-format raw-in-base64-out \
+  --payload '{"force": true}' /dev/stdout          # ook buiten het uitleesvenster
 aws lambda invoke --function-name kmlog-report \
   --cli-binary-format raw-in-base64-out --payload '{"year": 2026, "month": 9}' /dev/stdout
 ```

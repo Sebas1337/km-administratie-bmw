@@ -94,7 +94,7 @@ def test_poller_handler_end_to_end(aws, dynamodb_table, monkeypatch, capsys):
     monkeypatch.setattr(cardata.time, "time", lambda: NOW)
     store = seeded(DynamoDbStore(dynamodb_table))
 
-    result = poller.handler({}, None, store=store)
+    result = poller.handler({"force": True}, None, store=store)
 
     assert result["odometer_km"] == 23456
     assert result["quota_used"] == 1  # the refresh is not an API call
@@ -124,7 +124,7 @@ def test_poller_logs_quota_exceeded_instead_of_failing(aws, dynamodb_table, monk
         }
     )
     monkeypatch.setattr(cardata.requests, "Session", lambda: FakeSession({}))
-    result = poller.handler({}, None, store=store, token_store=tokens)
+    result = poller.handler({"force": True}, None, store=store, token_store=tokens)
     json.dumps(result)  # Lambda must be able to marshal the return value
     assert result["event"] == "quota_exceeded"
 
@@ -183,3 +183,26 @@ def test_previous_month():
     # 31 dec 23:30 UTC is already 1 jan in Amsterdam
     assert report.previous_month(datetime(2026, 12, 31, 23, 30, tzinfo=UTC)) == (2026, 12)
     assert report.previous_month(datetime(2026, 12, 31, 22, 0, tzinfo=UTC)) == (2026, 11)
+
+
+def test_poller_only_calls_bmw_inside_the_window():
+    from kmlog.derive import AMSTERDAM
+    from kmlog.model import Settings
+
+    store = SqliteStore()
+    tokens = MemoryStore()  # nothing linked: inside the window the poller says so
+    night = datetime(2026, 10, 14, 3, 0, tzinfo=AMSTERDAM)
+    morning = datetime(2026, 10, 14, 6, 0, tzinfo=AMSTERDAM)
+    assert poller.handler({}, None, store=store, token_store=tokens, now=night) == {
+        "event": "outside_window",
+        "hour": 3,
+    }
+    assert poller.handler({}, None, store=store, token_store=tokens, now=morning)["event"] == (
+        "not_linked"
+    )
+    store.put_settings(Settings(poll_start_hour=22, poll_end_hour=4))  # past midnight
+    assert poller.handler({}, None, store=store, token_store=tokens, now=night)["event"] == (
+        "not_linked"
+    )
+    assert Settings(22, 4).poll_hours == [22, 23, 0, 1, 2, 3, 4]
+    assert len(Settings(0, 23).poll_hours) == 24

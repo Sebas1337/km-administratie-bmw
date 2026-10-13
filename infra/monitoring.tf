@@ -71,17 +71,18 @@ resource "aws_cloudwatch_metric_alarm" "notify_errors" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
 }
 
-# Fewer than two thirds of the scheduled polls in a day means the schedule or the function is broken.
+# 24 invocations a day (inside or outside the poll window); fewer than 16 means the schedule or the
+# function is broken.
 resource "aws_cloudwatch_metric_alarm" "poller_silent" {
   alarm_name          = "kmlog-poller-invocations-low"
-  alarm_description   = "kmlog-poller ran fewer than ${floor(local.polls_per_day * 2 / 3)} times in 24 hours."
+  alarm_description   = "kmlog-poller ran fewer than 16 times in 24 hours."
   namespace           = "AWS/Lambda"
   metric_name         = "Invocations"
   dimensions          = { FunctionName = aws_lambda_function.fn["poller"].function_name }
   statistic           = "Sum"
   period              = 86400
   evaluation_periods  = 1
-  threshold           = floor(local.polls_per_day * 2 / 3)
+  threshold           = 16
   comparison_operator = "LessThanThreshold"
   treat_missing_data  = "breaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]

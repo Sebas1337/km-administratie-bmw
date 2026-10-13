@@ -74,7 +74,7 @@ def login(app, mails) -> str:
     return cookie.split(";")[0]
 
 
-def csrf(app, cookie, path="/stamdata") -> str:
+def csrf(app, cookie, path="/instellingen") -> str:
     body = app(event("GET", path, cookie=cookie))["body"]
     return re.search(r'name="csrf" value="([^"]+)"', body).group(1)
 
@@ -116,31 +116,31 @@ def test_login_mail_is_rate_limited(env):
 def test_tampered_or_expired_cookie_is_rejected(env):
     app, store, mails, clock = env
     cookie = login(app, mails)
-    assert app(event("GET", "/stamdata", cookie=cookie))["statusCode"] == 200
+    assert app(event("GET", "/instellingen", cookie=cookie))["statusCode"] == 200
     name, value = cookie.split("=", 1)
     payload, sig = value.split(".")
     forged = f"{name}={payload[:-1]}A.{sig}"
-    assert app(event("GET", "/stamdata", cookie=forged))["statusCode"] == 303
+    assert app(event("GET", "/instellingen", cookie=forged))["statusCode"] == 303
     other_key = Auth(b"x" * 32, store).new_session_cookie(EVENING).split(";")[0]
-    assert app(event("GET", "/stamdata", cookie=other_key))["statusCode"] == 303
+    assert app(event("GET", "/instellingen", cookie=other_key))["statusCode"] == 303
     clock.now = EVENING + timedelta(days=31)
-    assert app(event("GET", "/stamdata", cookie=cookie))["statusCode"] == 303
+    assert app(event("GET", "/instellingen", cookie=cookie))["statusCode"] == 303
 
 
 def test_post_without_valid_csrf_or_from_other_origin_is_rejected(env):
     app, store, mails, _ = env
     cookie = login(app, mails)
     form = {"name": "X", "type": "business", "lat": "52.1", "lon": "5.1"}
-    assert app(event("POST", "/stamdata/locatie", form, cookie))["statusCode"] == 403
+    assert app(event("POST", "/instellingen/locatie", form, cookie))["statusCode"] == 403
     bad = {**form, "csrf": "nope"}
-    assert app(event("POST", "/stamdata/locatie", bad, cookie))["statusCode"] == 403
+    assert app(event("POST", "/instellingen/locatie", bad, cookie))["statusCode"] == 403
     good = {**form, "csrf": csrf(app, cookie)}
-    evil = event("POST", "/stamdata/locatie", good, cookie, origin="https://evil.example")
+    evil = event("POST", "/instellingen/locatie", good, cookie, origin="https://evil.example")
     assert app(evil)["statusCode"] == 403
-    opaque = event("POST", "/stamdata/locatie", good, cookie, origin="null")
+    opaque = event("POST", "/instellingen/locatie", good, cookie, origin="null")
     assert app(opaque)["statusCode"] == 403
     assert len(store.locations()) == 2
-    ok = event("POST", "/stamdata/locatie", good, cookie, origin=f"https://{HOST}")
+    ok = event("POST", "/instellingen/locatie", good, cookie, origin=f"https://{HOST}")
     assert app(ok)["statusCode"] == 303
     assert len(store.locations()) == 3
 
@@ -312,7 +312,7 @@ def test_year_page_stamdata_page_and_xlsx(env):
     cookie = login(app, mails)
     body = app(event("GET", "/jaar/2026", cookie=cookie))["body"]
     assert "Jaaroverzicht 2026" in body and "september" in body
-    body = app(event("GET", "/stamdata", cookie=cookie))["body"]
+    body = app(event("GET", "/instellingen", cookie=cookie))["body"]
     assert "Thuis" in body and "A4" in body
     resp = app(event("GET", "/maand/2026-09.xlsx", cookie=cookie))
     assert resp["isBase64Encoded"] and "attachment" in resp["headers"]["Content-Disposition"]
@@ -330,7 +330,7 @@ def test_route_save_keeps_one_default(env):
         "km": "75",
         "default": "1",
     }
-    assert app(event("POST", "/stamdata/route", form, cookie))["statusCode"] == 303
+    assert app(event("POST", "/instellingen/route", form, cookie))["statusCode"] == 303
     defaults = [r.name for r in store.routes() if r.is_default]
     assert defaults == ["A12"]
 

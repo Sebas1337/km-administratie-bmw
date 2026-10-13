@@ -61,6 +61,26 @@ class Vehicle:
 
 
 @dataclass(frozen=True)
+class Settings:
+    """Settings from the web UI (Instellingen) that are not stamdata.
+
+    The poller is invoked every hour on the hour; it only calls BMW within the poll window
+    (Europe/Amsterdam hours, both ends included; end < start runs past midnight).
+    """
+
+    poll_start_hour: int = 6
+    poll_end_hour: int = 23
+
+    @property
+    def poll_hours(self) -> list[int]:
+        start, end = self.poll_start_hour, self.poll_end_hour
+        return list(range(start, end + 1)) if start <= end else [*range(start, 24), *range(end + 1)]
+
+    def polls_at(self, hour: int) -> bool:
+        return hour in self.poll_hours
+
+
+@dataclass(frozen=True)
 class Rate:
     """Reimbursement rate for a calendar year, in integer cents per km."""
 

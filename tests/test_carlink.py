@@ -96,7 +96,7 @@ def test_unlink_deletes_container_and_keeps_client_id():
 
 
 def test_poller_skips_when_no_car_is_linked():
-    result = poller.handler({}, None, store=SqliteStore(), token_store=MemoryStore())
+    result = poller.handler({"force": True}, None, store=SqliteStore(), token_store=MemoryStore())
     assert result == {"event": "not_linked"}
 
 
@@ -144,7 +144,7 @@ def test_auto_page_without_aws(env):
     assert "alleen in de AWS-omgeving" in app(event("GET", "/auto", cookie=cookie))["body"]
 
 
-def test_vehicle_and_rate_on_stamdata_page(env):
+def test_settings_page_vehicle_rates_and_poll_window(env):
     app, store, mails, _ = env
     cookie = login(app, mails)
     token = csrf(app, cookie)
@@ -152,14 +152,34 @@ def test_vehicle_and_rate_on_stamdata_page(env):
     def post(path, **form):
         return app(event("POST", path, {"csrf": token, **form}, cookie=cookie))
 
-    post("/stamdata/voertuig", name="BMW i5", plate="xy-987-z")
+    post("/instellingen/voertuig", name="BMW i5", plate="xy-987-z")
     assert (store.vehicle("car").name, store.vehicle("car").plate) == ("BMW i5", "XY-987-Z")
-    post("/stamdata/tarief", year="2027", euros="0,23")
+    post("/instellingen/tarief", year="2027", euros="0,23")
     assert store.rate(2027).cents_per_km == 23
-    assert post("/stamdata/tarief", year="2027", euros="0,235")["statusCode"] == 400
-    body = app(event("GET", "/stamdata", cookie=cookie))["body"]
-    assert "2026 € 0,25" in body and "2027 € 0,23" in body
-    assert 'value="BMW i5"' in body
+    assert post("/instellingen/tarief", year="2027", euros="0,235")["statusCode"] == 400
+    body = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "<h1>Instellingen</h1>" in body and 'value="BMW i5"' in body
+    assert "<td>2026</td>" in body and 'value="0,25"' in body
+    assert "<td>2027</td>" in body and 'value="0,23"' in body
+    assert 'name="year" value="2028"' in body  # next year to add (2026 is "now" in env)
+
+    post("/instellingen/tarief/verwijder", year="2027")
+    assert store.rate(2027) is None and store.rate(2026) is not None
+    assert post("/instellingen/tarief/verwijder", year="2027")["statusCode"] == 400
+
+    assert store.settings().poll_hours == list(range(6, 24))  # default
+    post("/instellingen/uitlezen", start_hour="0", end_hour="23")
+    assert len(store.settings().poll_hours) == 24
+    post("/instellingen/uitlezen", start_hour="22", end_hour="4")
+    assert store.settings().poll_hours == [22, 23, 0, 1, 2, 3, 4]
+    assert (
+        "7 metingen per dag, over middernacht"
+        in app(event("GET", "/instellingen", cookie=cookie))["body"]
+    )
+    assert post("/instellingen/uitlezen", start_hour="0", end_hour="24")["statusCode"] == 400
+
+    old = app(event("GET", "/stamdata", cookie=cookie))  # old bookmark
+    assert old["statusCode"] == 303 and old["headers"]["Location"] == "/instellingen"
 
 
 def test_new_year_uses_the_last_rate():
@@ -184,3 +204,13 @@ def test_secret_without_value_means_not_linked():
             raise self.exceptions.ResourceNotFoundException()
 
     assert cardata.SecretsManagerTokenStore("kmlog/cardata", client=Client()).load() == {}
+
+
+def test_poll_window_must_fit_the_quota():
+    from kmlog import actions
+    from kmlog.actions import ActionError
+
+    store = SqliteStore()
+    with pytest.raises(ActionError, match="24 metingen"):
+        actions.save_poll_window(store, start_hour=0, end_hour=23, quota_limit=25)
+    actions.save_poll_window(store, start_hour=6, end_hour=23, quota_limit=25)  # 18 fits in 20

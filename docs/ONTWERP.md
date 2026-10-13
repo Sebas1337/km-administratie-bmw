@@ -87,7 +87,7 @@ Randvoorwaarden
 ## 5. Architectuur (AWS)
 
 ```
-EventBridge Scheduler (elk uur, standaard 06–23 Europe/Amsterdam; instelbaar)
+EventBridge Scheduler (elk uur; de poller slaat uren buiten het venster over, standaard 06–23)
    └─► Lambda kmlog-poller
          ├─ Secrets Manager kmlog/cardata: client_id, roterende tokens, vin, container id
          ├─ OAuth refresh als het access token verlopen is; nieuwe refresh token direct opslaan
@@ -295,8 +295,8 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   JavaScript, mobiel eerst. Pagina's: maand (ritten per dag of per rit, totaal, bedrag,
   Excel-download, openstaande vragen met één-tik-knoppen, laatste positie van de auto), dag (legs met
   tijden en een kaartje van de aankomstplek, zakelijke km corrigeren met notitie, handmatige rit
-  toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, stamdata (auto, vergoeding per
-  jaar, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
+  toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, instellingen (auto, vergoeding per
+  jaar, uitleesvenster, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
 - **Inloggen**: één gebruiker, geen wachtwoord. Knop "stuur inloglink" → mail naar het vaste adres
   (geen invoerveld) met een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
   max. 5 mails per uur). De link opent een pagina met een knop; pas die POST verbruikt het token
@@ -378,8 +378,9 @@ tijdstempels.
 | 2026-10-13 | Voertuig (naam, kenteken) in de stamdata; voertuig-id default `car` | Eén plek voor alle configuratie; geen import nodig om een maandstaat te kunnen maken. |
 | 2026-10-13 | Easy DKIM als default, Bring Your Own DKIM optioneel | Easy DKIM werkt bij de meeste DNS-providers; BYODKIM alleen voor providers zonder CNAME onder `_domainkey`. |
 | 2026-10-13 | Auto koppelen via de webinterface i.p.v. lokaal script + `.env` | Geen lokale BMW-tokens of scripts nodig; de device-code flow past op twee knoppen (aanvragen, bevestigen) zonder wachtlus in de Lambda. Eén auto per installatie. |
-| 2026-10-13 | Vergoeding per jaar in de webinterface; jaar zonder tarief gebruikt het laatste eerdere | Een nieuw jaar mag de maandstaat van januari niet blokkeren; wijkt het tarief af, dan stel je het in. |
-| 2026-10-13 | Poll-venster instelbaar (`poll_start_hour`/`poll_end_hour`, standaard 06–23) | Wie 's nachts rijdt, wil ook dan metingen; 24 polls per dag passen in het quotum (50, eigen grens 40). Terraform bewaakt dat het venster past. |
+| 2026-10-13 | Vergoeding per jaar in de webinterface (tabel, toevoegen/wijzigen/verwijderen); jaar zonder tarief gebruikt het laatste eerdere | Een nieuw jaar mag de maandstaat van januari niet blokkeren; wijkt het tarief af, dan stel je het in. |
+| 2026-10-13 | Uitleesvenster instelbaar in de webinterface (standaard 06–23); de scheduler roept de poller elk uur aan en die slaat uren buiten het venster over vóór elke BMW-call | Wie 's nachts rijdt, wil ook dan metingen; 24 polls per dag passen in het quotum (50, eigen grens 40). Zonder deploy aan te passen; een overgeslagen uur kost alleen een Lambda-aanroep. De webinterface weigert een venster dat niet past. |
+| 2026-10-13 | Pagina "Stamdata" heet "Instellingen" (`/instellingen`, `/stamdata` stuurt door) | Er staan nu ook auto, tarief en uitleesvenster op; "stamdata" blijft de term voor locaties, routes en het TOML-bestand. |
 
 ## 12. Bronnen
 

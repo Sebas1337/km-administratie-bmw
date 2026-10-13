@@ -1,6 +1,8 @@
 """Hourly poller: CarData telematicData -> Observation -> re-derived legs (ONTWERP.md §5).
 
-Invoked hourly by EventBridge Scheduler (default 06-23 Amsterdam, see infra). Order of business:
+Invoked every hour on the hour by EventBridge Scheduler. Outside the poll window from the web UI
+(Instellingen, default 06-23 Europe/Amsterdam) it stops before any CarData call; the event
+{"force": true} polls anyway (manual test). Order of business:
 1. Load the token state from Secrets Manager; refresh when the access token expires within
    5 minutes. Refresh tokens rotate, so the new state is written back immediately.
 2. Count every API call against a per-UTC-day quota in DynamoDB; refuse beyond QUOTA_LIMIT.
@@ -18,7 +20,7 @@ from datetime import UTC, datetime
 
 from .. import cardata
 from ..cardata import QuotaExceeded
-from ..derive import match_location
+from ..derive import AMSTERDAM, match_location
 from ..process import rederive
 from ..store import Store
 from . import env, log_event
@@ -51,12 +53,19 @@ def poll(store: Store, client: cardata.CarDataClient, vehicle: str, now: datetim
     }
 
 
-def handler(event, context, *, store: Store | None = None, token_store=None) -> dict:
+def handler(
+    event, context, *, store: Store | None = None, token_store=None, now: datetime | None = None
+) -> dict:
     from ..store.dynamodb import DynamoDbStore
 
     store = store or DynamoDbStore(env("TABLE_NAME", "kmlog-data"))
     token_store = token_store or cardata.SecretsManagerTokenStore(env("SECRET_ID", "kmlog/cardata"))
-    now = datetime.now(UTC)
+    now = now or datetime.now(UTC)
+    hour = now.astimezone(AMSTERDAM).hour
+    if not (event or {}).get("force") and not store.settings().polls_at(hour):
+        result = {"event": "outside_window", "hour": hour}
+        log_event(**result)
+        return result
     client = cardata.CarDataClient(
         token_store, before_api_call=quota_guard(store, int(env("QUOTA_LIMIT", "40")))
     )
