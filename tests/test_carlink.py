@@ -178,6 +178,17 @@ def test_settings_page_vehicle_rates_and_poll_window(env):
     )
     assert post("/instellingen/uitlezen", start_hour="0", end_hour="24")["statusCode"] == 400
 
+    assert not store.settings().mail_missed_days  # default
+    post("/instellingen/meldingen", missed_days="1")
+    assert store.settings().mail_missed_days
+    assert store.settings().poll_hours == [22, 23, 0, 1, 2, 3, 4]  # other settings kept
+    assert (
+        'name="missed_days" value="1" checked'
+        in app(event("GET", "/instellingen", cookie=cookie))["body"]
+    )
+    post("/instellingen/meldingen")  # unchecked box: field absent
+    assert not store.settings().mail_missed_days
+
     old = app(event("GET", "/stamdata", cookie=cookie))  # old bookmark
     assert old["statusCode"] == 303 and old["headers"]["Location"] == "/instellingen"
 

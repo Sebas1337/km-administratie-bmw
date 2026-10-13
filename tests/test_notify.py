@@ -8,7 +8,7 @@ import boto3
 from kmlog import notify
 from kmlog.aws import notify as notify_handler
 from kmlog.classify import is_workday
-from kmlog.model import LegStatus
+from kmlog.model import LegStatus, Settings
 from kmlog.store.dynamodb import DynamoDbStore
 from kmlog.store.sqlite import SqliteStore
 from test_aws_handlers import seeded
@@ -54,12 +54,28 @@ def test_missed_business_day_and_nothing_to_report():
     send = lambda s, b: mails.append((s, b))  # noqa: E731
     assert not notify.run(store, "car", EVENING, send, None)["mailed"]
 
+    store.put_settings(Settings(mail_missed_days=True))
     day = date(2026, 10, 6)  # tuesday: private day of 46 km -> question (rule 5) + rule 7
     store.put_observations(observations(day, private_day(day)))
     result = notify.run(store, "car", EVENING, send, None)
     assert (result["questions"], result["missed_days"]) == (1, 1)
     assert "gemist?" in mails[0][1] and "di 06-10" in mails[0][1]
     assert not notify.run(store, "car", EVENING, send, None)["mailed"]
+
+
+def test_missed_days_are_not_mailed_by_default():
+    store = seeded(SqliteStore())
+    mails = []
+    send = lambda s, b: mails.append((s, b))  # noqa: E731
+    day = date(2026, 10, 6)
+    short = [("00:00", "10:00", "home", 50_000), ("10:40", "23:00", "home", 50_016)]
+    store.put_observations(observations(day, short))  # 16 km home -> home: no question
+    result = notify.run(store, "car", EVENING, send, None)
+    assert (result["questions"], result["missed_days"], result["mailed"]) == (0, 0, False)
+
+    store.put_settings(Settings(mail_missed_days=True))  # switched on later: no backlog
+    assert not notify.run(store, "car", EVENING, send, None)["mailed"]
+    assert mails == []
 
 
 def test_handler_sends_via_ses(aws, dynamodb_table, monkeypatch):
