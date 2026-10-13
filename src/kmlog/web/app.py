@@ -186,9 +186,14 @@ def redirect(location: str, cookies: list[str] | None = None) -> Response:
     return Response(303, "", {"Location": location}, cookies or [])
 
 
+# a local path (+ query) of plain URL characters; no "//host" or "/\host", and no tab or newline,
+# which browsers strip from a Location ("/\t/evil.example" becomes "//evil.example")
+_LOCAL_PATH = re.compile(r"/(?![/\\])[A-Za-z0-9\-._~/?=&%]*")
+
+
 def safe_next(value: str | None, default: str = "/") -> str:
-    """Only local paths: no scheme, no protocol-relative //host."""
-    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
+    """Only local paths on this host: an allowlist, so no open redirect after login."""
+    if value and _LOCAL_PATH.fullmatch(value):
         return value
     return default
 
