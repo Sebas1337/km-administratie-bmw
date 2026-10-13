@@ -44,10 +44,13 @@
 {% elif link.pending %}
 <div class="card q">
   <h2>Bevestig bij BMW</h2>
+  <div class="muted">Je code</div>
+  <div class="big">{{ link.pending.user_code }}</div>
   <ol>
-    <li>Open <a href="{{ link.pending.verification_uri }}" rel="noreferrer" target="_blank">de BMW-pagina</a> en log in met je BMW-account.</li>
-    <li>Controleer dat daar deze code staat: <strong>{{ link.pending.user_code }}</strong>, en keur de toegang goed.</li>
-    <li>Kom terug en klik op <em>Ik heb bevestigd</em>.</li>
+    <li>Open <a href="{{ link.pending.verification_uri }}" rel="noreferrer" target="_blank">de BMW-pagina</a> en log in met je BMW-account
+      (of ga zelf naar My BMW → <em>Voertuigenoverzicht</em> → <em>BMW CarData</em>).</li>
+    <li>Vul daar de code hierboven in en keur de toegang goed.</li>
+    <li>Kom terug en klik op <em>Ik heb bevestigd</em>. De code is een paar minuten geldig.</li>
   </ol>
   <div class="buttons">
     <form class="inline" method="post" action="/auto/bevestigen"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Ik heb bevestigd</button></form>
@@ -59,7 +62,7 @@
 <div class="card">
   <h2>Auto koppelen</h2>
   <ol>
-    <li>Ga naar het My BMW-portaal (bmw.nl → inloggen) → <em>Mijn voertuigen</em> → je auto → <em>BMW CarData</em>.</li>
+    <li>Ga naar het My BMW-portaal (bmw.nl → inloggen) → <em>Voertuigenoverzicht</em> → <em>BMW CarData</em>.</li>
     <li>Maak een <strong>CarData Client</strong> aan en abonneer hem op <strong>CarData API</strong>.</li>
     <li>Plak de Client ID hieronder. Je BMW-wachtwoord komt nooit in deze app.</li>
   </ol>

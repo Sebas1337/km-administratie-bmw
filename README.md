@@ -178,12 +178,14 @@ dagen ingelogd op dat apparaat.
 
 ### 7. Auto koppelen
 
-1. Log in op het [My BMW-portaal](https://www.bmw.nl/) → **Mijn voertuigen** → je auto →
+1. Log in op het [My BMW-portaal](https://www.bmw.nl/) → **Voertuigenoverzicht** →
    **BMW CarData**.
 2. Maak een **CarData Client** aan en abonneer hem op **CarData API**. Doe dat vóór de
    volgende stap, anders mist de koppeling de juiste rechten.
 3. Ga in km-admin naar **Auto**, plak de **Client ID** en klik op **Koppelen**.
-4. Open de BMW-link die verschijnt, log in, controleer de code en keur de toegang goed.
+4. km-admin toont een code. Open de BMW-link die verschijnt (of ga zelf naar My BMW →
+   **Voertuigenoverzicht** → **BMW CarData**), log in, **vul de code in** en keur de toegang
+   goed. De code is een paar minuten geldig.
 5. Klik in km-admin op **Ik heb bevestigd**.
 
 De BMW-tokens komen in AWS Secrets Manager (`kmlog/cardata`) en worden daarna alleen nog door

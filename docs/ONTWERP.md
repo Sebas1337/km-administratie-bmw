@@ -122,7 +122,7 @@ De officiële documentatie zit achter een login in het portaal
 (`https://bmw-cardata.bmwgroup.com/customer/public/api-documentation/…`). Onderstaande is
 geverifieerd tegen de broncode van drie community-clients (zie §12) en in de praktijk met een BMW i4.
 
-- **Toegang**: in het My BMW-portaal (Mijn voertuigen → voertuigoverzicht → tegel "BMW CarData") een
+- **Toegang**: in het My BMW-portaal (Voertuigenoverzicht → "BMW CarData") een
   *CarData Client* aanmaken → Client ID (account-breed). Abonneer de client op "CarData API"
   **vóór** de login, anders mist het token de scope (403 `CU-103`). Scopes soms één voor één
   toevoegen met ~30 s ertussen.
