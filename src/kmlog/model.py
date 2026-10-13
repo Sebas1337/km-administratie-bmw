@@ -171,6 +171,11 @@ class Leg:
     odometer_to: int | None = None
     waypoints: list[Waypoint] = field(default_factory=list)
 
+    @property
+    def imported(self) -> bool:
+        """Read from an older database's spreadsheet import (see LegSource._missing_)."""
+        return self.source is LegSource.MANUAL and "#excel#" in self.id
+
 
 @dataclass(frozen=True)
 class DayNote:

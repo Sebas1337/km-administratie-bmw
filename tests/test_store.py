@@ -205,5 +205,7 @@ def test_counter(store):
 def test_legs_imported_from_a_spreadsheet_load_as_manual():
     # databases from before the spreadsheet importer was removed
     old = dumps(_leg(5)).replace('"source": "cardata"', '"source": "excel_2026", "legacy": true')
+    old = old.replace(json.loads(old)["id"], "car#excel#2026-10-05")
     leg = loads(Leg, old)
     assert leg.source is LegSource.MANUAL and leg.date == date(2026, 10, 5)
+    assert leg.imported and not _leg(5, LegSource.MANUAL).imported

@@ -19,7 +19,7 @@
   <div><strong>{{ names.get(leg.from_location, "onbekend") }} → {{ names.get(leg.to_location, "onbekend") }}</strong>
     <span class="muted">vertrokken na {{ leg.departed_after|time }}, aangekomen {{ leg.arrived_at|time }}</span></div>
   {% else %}
-  <div><strong>{{ describe([leg]) }}</strong> <span class="muted">(handmatig)</span></div>
+  <div><strong>{{ describe([leg]) }}</strong> <span class="muted">({{ "geïmporteerd" if leg.imported else "handmatig" }})</span></div>
   {% endif %}
   <div>{{ leg.distance_km|km }} km gereden{% if leg.odometer_from is not none %} (km-stand {{ leg.odometer_from|km }} → {{ leg.odometer_to|km }}){% endif %} · <strong>{{ leg.business_km|km }} km zakelijk</strong>{% if leg.private_km %} · {{ leg.private_km|km }} km privé{% endif %}
     {% if STATUS_TEXT[leg.status.value] %} · <span class="badge">{{ STATUS_TEXT[leg.status.value] }}</span>{% endif %}</div>
@@ -47,7 +47,7 @@
       <button class="secondary">Correctie ongedaan maken</button>
     </form>
     {% endif %}
-    {% if leg.source == MANUAL %}
+    {% if leg.source == MANUAL and not leg.imported %}
     <form method="post" action="/rit/verwijder">
       <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="leg" value="{{ leg.id }}"><input type="hidden" name="date" value="{{ day.isoformat() }}">
       <button class="danger">Rit verwijderen</button>

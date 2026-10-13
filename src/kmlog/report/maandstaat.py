@@ -128,7 +128,9 @@ def _place(loc_id: str | None, names: dict[str, str]) -> str:
 def describe(legs: list[Leg], names: dict[str, str]) -> str:
     if all(leg.source is LegSource.MANUAL for leg in legs):
         notes = [leg.note for leg in legs if leg.note]
-        return "; ".join(notes) if notes else "handmatige rit"
+        if notes:
+            return "; ".join(notes)
+        return "geïmporteerde rit" if all(leg.imported for leg in legs) else "handmatige rit"
     parts = [_place(legs[0].from_location, names)]
     for leg in legs:
         parts.append(_place(leg.to_location, names))

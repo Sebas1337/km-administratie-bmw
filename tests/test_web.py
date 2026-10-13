@@ -252,11 +252,20 @@ def test_day_page_correction_and_manual_trip(env):
 
     form = {"csrf": token, "date": "2026-10-09", "km": "120", "description": "Thuis → Utrecht"}
     assert app(event("POST", "/rit", form, cookie))["statusCode"] == 303
-    (manual,) = store.legs("car", date(2026, 10, 9), date(2026, 10, 9))
-    assert manual.source is LegSource.MANUAL and int(manual.business_km) == 120
-    form = {"csrf": token, "date": "2026-10-09", "leg": manual.id}
+    (trip,) = store.legs("car", date(2026, 10, 9), date(2026, 10, 9))
+    assert trip.source is LegSource.MANUAL and int(trip.business_km) == 120
+    form = {"csrf": token, "date": "2026-10-09", "leg": trip.id}
     assert app(event("POST", "/rit/verwijder", form, cookie))["statusCode"] == 303
     assert store.legs("car", date(2026, 10, 9), date(2026, 10, 9)) == []
+
+    # trips from an older database's spreadsheet import: labelled, and they cannot be deleted
+    imported = manual(date(2026, 10, 9), 88)
+    imported.id = "car#excel#2026-10-09"
+    store.put_leg(imported)
+    body = app(event("GET", "/dag/2026-10-09", cookie=cookie))["body"]
+    assert "(geïmporteerd)" in body and "/rit/verwijder" not in body
+    form = {"csrf": token, "date": "2026-10-09", "leg": imported.id}
+    assert app(event("POST", "/rit/verwijder", form, cookie))["statusCode"] == 400
 
 
 def test_save_unknown_stop_as_business_location(env):

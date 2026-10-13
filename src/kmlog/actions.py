@@ -201,7 +201,7 @@ def add_manual_trip(
 
 def delete_manual_trip(store: Store, vehicle: str, leg_id: str, day: date) -> None:
     leg = _find_leg(store, vehicle, leg_id, day)
-    if leg.source is not LegSource.MANUAL:
+    if leg.source is not LegSource.MANUAL or leg.imported:
         raise ActionError("Alleen handmatige ritten kunnen worden verwijderd.")
     store.delete_leg(leg)
 
