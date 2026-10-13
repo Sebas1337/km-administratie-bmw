@@ -1,0 +1,32 @@
+{# one open question card; needs q, csrf, here, describe #}
+<div class="card q">
+  <div><a href="/dag/{{ q.date.isoformat() }}">{{ q.date|day }}</a> — {{ describe(q.legs) }}</div>
+  <div>{{ QUESTION_TEXT[q.question] }}</div>
+  <div class="muted">{{ q.distance_km|km }} km gereden; nu {{ q.business_km|km }} km zakelijk, bij "zakelijk" {{ q.business_if_confirmed|km }} km.</div>
+  <div class="buttons">
+    {% for a in q.options %}
+    <form class="inline" method="post" action="/antwoord">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="segment" value="{{ q.segment_id }}">
+      <input type="hidden" name="answer" value="{{ a.value }}">
+      <input type="hidden" name="next" value="{{ here }}">
+      <button {% if not loop.first %}class="secondary"{% endif %}>{{ ANSWER_LABELS[a] }}</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% for stop in q.unknown_stops %}
+  <details>
+    <summary>Stop opslaan als locatie (<a href="{{ stop|osm }}" rel="noreferrer" target="_blank">kaart</a>)</summary>
+    <form method="post" action="/stop" class="grid">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="segment" value="{{ q.segment_id }}">
+      <input type="hidden" name="lat" value="{{ stop[0] }}">
+      <input type="hidden" name="lon" value="{{ stop[1] }}">
+      <input type="hidden" name="next" value="{{ here }}">
+      <div><label>Naam</label><input name="name" required maxlength="80"></div>
+      <div><label>Soort</label><select name="type"><option value="business">zakelijk (alle km)</option><option value="private">privé</option></select></div>
+      <div><button>Opslaan</button></div>
+    </form>
+  </details>
+  {% endfor %}
+</div>

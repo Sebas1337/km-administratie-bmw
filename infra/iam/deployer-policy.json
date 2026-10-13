@@ -1,0 +1,162 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "LambdaFunctions",
+      "Effect": "Allow",
+      "Action": "lambda:*",
+      "Resource": "arn:aws:lambda:eu-central-1:*:function:kmlog-*"
+    },
+    {
+      "Sid": "DynamoDbTables",
+      "Effect": "Allow",
+      "Action": "dynamodb:*",
+      "Resource": [
+        "arn:aws:dynamodb:eu-central-1:*:table/kmlog-*",
+        "arn:aws:dynamodb:eu-central-1:*:table/kmlog-*/index/*"
+      ]
+    },
+    {
+      "Sid": "Secrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:*",
+      "Resource": "arn:aws:secretsmanager:eu-central-1:*:secret:kmlog/*"
+    },
+    {
+      "Sid": "BucketsStateAndReports",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::kmlog-*",
+        "arn:aws:s3:::kmlog-*/*"
+      ]
+    },
+    {
+      "Sid": "Schedules",
+      "Effect": "Allow",
+      "Action": "scheduler:*",
+      "Resource": [
+        "arn:aws:scheduler:eu-central-1:*:schedule/*/kmlog-*",
+        "arn:aws:scheduler:eu-central-1:*:schedule-group/kmlog*"
+      ]
+    },
+    {
+      "Sid": "LambdaLogGroups",
+      "Effect": "Allow",
+      "Action": "logs:*",
+      "Resource": [
+        "arn:aws:logs:eu-central-1:*:log-group:/aws/lambda/kmlog-*",
+        "arn:aws:logs:eu-central-1:*:log-group:/aws/lambda/kmlog-*:*"
+      ]
+    },
+    {
+      "Sid": "AlarmsAndAlertTopic",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:TagResource",
+        "cloudwatch:UntagResource",
+        "cloudwatch:ListTagsForResource",
+        "sns:*"
+      ],
+      "Resource": [
+        "arn:aws:cloudwatch:eu-central-1:*:alarm:kmlog-*",
+        "arn:aws:sns:eu-central-1:*:kmlog-*"
+      ]
+    },
+    {
+      "Sid": "MailIdentities",
+      "Effect": "Allow",
+      "Action": [
+        "ses:CreateEmailIdentity",
+        "ses:DeleteEmailIdentity",
+        "ses:GetEmailIdentity",
+        "ses:TagResource",
+        "ses:UntagResource",
+        "ses:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ses:eu-central-1:*:identity/*"
+    },
+    {
+      "Sid": "ReadOnlyListCalls",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:GetMetricData",
+        "ses:GetAccount",
+        "ses:ListEmailIdentities"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ServiceRolesOnlyWithBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::*:role/kmlog-*",
+      "Condition": {
+        "ArnLike": {
+          "iam:PermissionsBoundary": "arn:aws:iam::*:policy/kmlog-boundary"
+        }
+      }
+    },
+    {
+      "Sid": "ServiceRolesManage",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:ListRoleTags",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole"
+      ],
+      "Resource": "arn:aws:iam::*:role/kmlog-*"
+    },
+    {
+      "Sid": "ReadBoundaryPolicy",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
+      ],
+      "Resource": "arn:aws:iam::*:policy/kmlog-boundary"
+    },
+    {
+      "Sid": "PassServiceRolesOnlyToLambdaAndScheduler",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/kmlog-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": [
+            "lambda.amazonaws.com",
+            "scheduler.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "CostGuard",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:ModifyBudget",
+        "budgets:ViewBudget",
+        "budgets:ListTagsForResource",
+        "budgets:TagResource"
+      ],
+      "Resource": "arn:aws:budgets::*:budget/kmlog-*"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+# secrets & local state
+.env
+
+# data: alles lokaal behalve samples
+data/*
+!data/samples/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+
+# terraform
+infra/**/.terraform/
+infra/**/*.tfstate*
+infra/**/*.tfvars
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
+infra/**/tfplan

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Jaaroverzicht {{ year }}{% endblock %}
+{% block content %}
+<div class="nav"><a href="/jaar/{{ year - 1 }}">← {{ year - 1 }}</a><h1>Jaaroverzicht {{ year }}</h1><a href="/jaar/{{ year + 1 }}">{{ year + 1 }} →</a></div>
+{% if totals %}
+<div class="scroll"><table>
+  <thead><tr><th>Maand</th><th class="n">Ritdagen</th><th class="n">Zakelijk km</th><th class="n">Bedrag</th></tr></thead>
+  <tbody>
+  {% for t in totals %}
+  <tr><td><a href="/maand/{{ '%04d-%02d'|format(year, t.month) }}">{{ MONTHS[t.month] }}</a></td>
+    <td class="n">{{ t.trip_days }}</td><td class="n">{{ t.business_km|km }}</td><td class="n">{{ t.amount_cents|euro }}</td></tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><td>Totaal</td><td></td><td class="n">{{ total_km|km }}</td><td class="n">{{ total_cents|euro }}</td></tr></tfoot>
+</table></div>
+{% else %}<p class="muted">Geen ritten in {{ year }}.</p>{% endif %}
+{% endblock %}

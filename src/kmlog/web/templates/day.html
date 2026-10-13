@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_map.html" import static_map %}
+{% block title %}{{ day|day }}{% endblock %}
+{% block content %}
+<div class="nav">
+  <a href="/dag/{{ prev.isoformat() }}">← {{ prev|day }}</a>
+  <h1>{{ day|day }}-{{ day.year }}</h1>
+  <a href="/dag/{{ next.isoformat() }}">{{ next|day }} →</a>
+</div>
+<p><a href="/maand/{{ day.strftime('%Y-%m') }}">← terug naar {{ MONTHS[day.month] }}</a></p>
+{% for n in notes %}<p class="muted">Notitie: {{ n.text }}</p>{% endfor %}
+
+{% for q in questions %}{% include "_question.html" %}{% endfor %}
+
+{% if not legs %}<p class="muted">Geen ritten op deze dag.</p>{% endif %}
+{% for leg in legs %}
+<div class="card">
+  {% if leg.source == CARDATA %}
+  <div><strong>{{ names.get(leg.from_location, "onbekend") }} → {{ names.get(leg.to_location, "onbekend") }}</strong>
+    <span class="muted">vertrokken na {{ leg.departed_after|time }}, aangekomen {{ leg.arrived_at|time }}</span></div>
+  {% else %}
+  <div><strong>{{ describe([leg]) }}</strong> <span class="muted">(handmatig)</span></div>
+  {% endif %}
+  <div>{{ leg.distance_km|km }} km gereden{% if leg.odometer_from is not none %} (km-stand {{ leg.odometer_from|km }} → {{ leg.odometer_to|km }}){% endif %} · <strong>{{ leg.business_km|km }} km zakelijk</strong>{% if leg.private_km %} · {{ leg.private_km|km }} km privé{% endif %}
+    {% if STATUS_TEXT[leg.status.value] %} · <span class="badge">{{ STATUS_TEXT[leg.status.value] }}</span>{% endif %}</div>
+  {% if leg.note and leg.source == CARDATA %}<div class="muted">{{ leg.note }}</div>{% endif %}
+  {% if leg.id in arrival_maps %}{{ static_map(arrival_maps[leg.id], leg.to_latlon) }}{% endif %}
+  {% if leg.segment_id in answered and leg.segment_id == leg.id %}
+  <form class="inline" method="post" action="/antwoord/herstel">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="segment" value="{{ leg.segment_id }}"><input type="hidden" name="next" value="{{ here }}">
+    <span class="muted">Beantwoord: {{ ANSWER_LABELS.get(answered[leg.segment_id], answered[leg.segment_id]) }}</span> <button class="secondary">Antwoord intrekken</button>
+  </form>
+  {% endif %}
+  <details>
+    <summary>Corrigeren</summary>
+    <form method="post" action="/correctie" class="grid">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="leg" value="{{ leg.id }}">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}"><input type="hidden" name="next" value="{{ here }}">
+      <div><label>Zakelijk km</label><input name="business_km" inputmode="numeric" value="{{ leg.business_km|km }}" required></div>
+      <div><label>Notitie</label><input name="note" maxlength="200" value=""></div>
+      <div><button>Opslaan</button></div>
+    </form>
+    {% if leg.source == CARDATA and leg.id in overrides %}
+    <form method="post" action="/correctie/herstel">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="leg" value="{{ leg.id }}">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}"><input type="hidden" name="next" value="{{ here }}">
+      <button class="secondary">Correctie ongedaan maken</button>
+    </form>
+    {% endif %}
+    {% if leg.source == MANUAL %}
+    <form method="post" action="/rit/verwijder">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="leg" value="{{ leg.id }}"><input type="hidden" name="date" value="{{ day.isoformat() }}">
+      <button class="danger">Rit verwijderen</button>
+    </form>
+    {% endif %}
+  </details>
+</div>
+{% endfor %}
+
+<h2>Metingen</h2>
+{% if readings %}
+<p class="muted">Kilometerstand zoals de auto die bij elke poll meldde (gemeld = moment waarop de auto de stand doorgaf).</p>
+<div class="scroll"><table>
+  <tr><th>Poll</th><th>Km-stand</th><th>Gemeld</th><th>Plek</th></tr>
+  {% for r in readings %}
+  <tr><td>{{ r.polled_at|time }}</td><td>{{ r.odometer_km|km }}</td><td>{{ r.reported_at|time }}</td>
+    <td>{% if r.latlon %}<a href="{{ r.latlon|osm }}" rel="noreferrer" target="_blank">{{ r.place or "onbekend" }}</a>{% else %}–{% endif %}</td></tr>
+  {% endfor %}
+</table></div>
+{% else %}<p class="muted">Geen metingen op deze dag.</p>{% endif %}
+
+<h2>Handmatige rit toevoegen</h2>
+<p class="muted">Voor als de auto geen gegevens gaf. Telt volledig zakelijk.</p>
+<form method="post" action="/rit" class="card grid">
+  <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="date" value="{{ day.isoformat() }}">
+  <div><label>Omschrijving</label><input name="description" required maxlength="120" placeholder="Thuis → Klant → Thuis"></div>
+  <div><label>Kilometers</label><input name="km" inputmode="numeric" required></div>
+  <div><label>Notitie</label><input name="note" maxlength="200"></div>
+  <div><button>Toevoegen</button></div>
+</form>
+{% endblock %}

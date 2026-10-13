@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Fout{% endblock %}
+{% block content %}
+<div class="card"><p class="err">{{ message }}</p>
+<p>{% if login %}<a href="/login">Nieuwe inloglink aanvragen</a>{% elif session %}<a href="/">Naar het overzicht</a>{% else %}<a href="/login">Inloggen</a>{% endif %}</p></div>
+{% endblock %}

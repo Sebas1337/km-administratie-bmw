@@ -1,0 +1,47 @@
+# Voorbeeld-stamdata (verzonnen coördinaten). Kopieer naar data/stamdata.toml (gitignored) en vul
+# je eigen gegevens in. Inlezen: uv run kmlog stamdata data/stamdata.toml
+# (of met --store dynamodb in AWS). Daarna kun je locaties en routes ook in de webinterface beheren.
+
+# De auto waarvoor je km-vergoeding declareert; komt in de kop van de maandstaat.
+[vehicle]
+name = "BMW i4"
+plate = "AB-123-C"
+
+# Locaties: type = home | client | business | private; radius_m (default 200) bepaalt hoe dicht
+# de auto erbij moet staan om "op die locatie" te zijn. Coördinaten: rechtsklik in Google Maps.
+[[location]]
+id = "home"
+name = "Thuis"
+type = "home"
+lat = 52.0000
+lon = 4.5000
+
+[[location]]
+id = "client"
+name = "Klant"
+type = "client"
+lat = 52.3000
+lon = 4.9000
+
+# Routes gelden in beide richtingen; precies één default per paar: de standaardroute. Een rit die
+# langer is dan elke bekende route levert een vraag op (omweg of privé-stop?); bij geen antwoord
+# telt de standaardroute als zakelijk en de rest als privé.
+[[route]]
+id = "a4"
+from = "home"
+to = "client"
+name = "A4"
+km = 70
+default = true
+
+[[route]]
+id = "ams"
+from = "home"
+to = "client"
+name = "via Amsterdam"
+km = 84
+
+# Vergoeding per km, per kalenderjaar, in centen.
+[[rate]]
+year = 2026
+cents_per_km = 25

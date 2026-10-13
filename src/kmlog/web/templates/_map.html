@@ -1,0 +1,8 @@
+{% macro static_map(map, latlon) -%}
+<a href="{{ latlon|osm }}" rel="noreferrer" target="_blank" class="map" style="max-width:{{ map.width }}px;height:{{ map.height }}px">
+  {# tiles are positioned relative to the box centre, so the pin stays right at any width #}
+  {% for t in map.tiles %}<img src="{{ t.url }}" alt="" width="256" height="256" referrerpolicy="origin" style="left:calc(50% + {{ t.left - map.width // 2 }}px);top:{{ t.top }}px">{% endfor %}
+  <span class="pin"></span>
+</a>
+<div class="muted small">Kaart © <a href="https://www.openstreetmap.org/copyright" rel="noreferrer" target="_blank">OpenStreetMap</a>-bijdragers</div>
+{%- endmacro %}

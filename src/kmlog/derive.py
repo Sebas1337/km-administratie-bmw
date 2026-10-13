@@ -1,0 +1,150 @@
+"""Derivation: observations -> parking episodes -> legs. See ONTWERP.md §7.1.
+
+Rules:
+- A ParkingEpisode is a run of consecutive observations with the same odometer value.
+  `first_seen` is the odometer_ts of the first observation (when the car reported the stop);
+  `last_seen` is the polled_at of the last one (the last moment we know it was still parked —
+  odometer_ts stays frozen while parked, so it cannot tell us that).
+- A pass-through point is an episode at an unknown place that is not a proven stop: it stood
+  there for less than MIN_STOP (one poll whose odometer_ts is
+  only minutes old: the car was awake, i.e. driving). The i4 also reports while driving
+  (2026-10-12: 17:58 reading 2 km before home), and such a reading must not split the trip.
+  Pass-through points are dropped from the chain and kept on the leg as waypoints. Episodes at
+  a known location always stay stops (a home stop separates a private ride from the commute).
+- A Leg spans two consecutive stops; distance = odometer delta.
+- A leg's day is the Amsterdam calendar day on which the car left home for the trip the leg
+  belongs to (a trip = legs from one home departure until the next), so a night shift that
+  returns the next morning counts once, on the departure day (§7.3 day F). Legs not preceded
+  by a home departure, or more than a day after it, fall back to their own departure day.
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Iterable
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from zoneinfo import ZoneInfo
+
+from .model import Leg, Location, LocationType, Observation, ParkingEpisode, Waypoint
+
+AMSTERDAM = ZoneInfo("Europe/Amsterdam")
+EARTH_RADIUS_M = 6_371_000
+MIN_STOP = timedelta(minutes=10)
+PASS_SHORT = "short"  # stood still for less than MIN_STOP as far as we know
+
+
+def amsterdam_date(ts: datetime) -> date:
+    return ts.astimezone(AMSTERDAM).date()
+
+
+def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle (haversine) distance in metres."""
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = phi2 - phi1
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+def match_location(
+    lat: float | None, lon: float | None, locations: Iterable[Location], on: date | None = None
+) -> Location | None:
+    """Nearest location whose radius contains (lat, lon) and that is active on `on`."""
+    if lat is None or lon is None:
+        return None
+    best: tuple[float, Location] | None = None
+    for loc in locations:
+        if on is not None and (
+            (loc.active_from and on < loc.active_from) or (loc.active_to and on > loc.active_to)
+        ):
+            continue
+        d = distance_m(lat, lon, loc.lat, loc.lon)
+        if d <= loc.radius_m and (best is None or d < best[0]):
+            best = (d, loc)
+    return best[1] if best else None
+
+
+def derive_episodes(
+    observations: Iterable[Observation], locations: Iterable[Location] = ()
+) -> list[ParkingEpisode]:
+    locations = list(locations)
+    obs = sorted(observations, key=lambda o: o.polled_at)
+    episodes: list[ParkingEpisode] = []
+    for o in obs:
+        current = episodes[-1] if episodes else None
+        if current is not None and current.odometer_km == o.odometer_km:
+            current.last_seen = max(current.last_seen, o.polled_at)
+            if current.lat is None and o.lat is not None:
+                current.lat, current.lon = o.lat, o.lon
+            continue
+        if current is not None and o.odometer_km < current.odometer_km:
+            raise ValueError(
+                f"odometer went backwards: {current.odometer_km} -> {o.odometer_km} "
+                f"at {o.polled_at}"
+            )
+        episodes.append(
+            ParkingEpisode(
+                vehicle=o.vehicle,
+                odometer_km=o.odometer_km,
+                lat=o.lat,
+                lon=o.lon,
+                first_seen=o.odometer_ts,
+                last_seen=o.polled_at,
+            )
+        )
+    for ep in episodes:
+        loc = match_location(ep.lat, ep.lon, locations, amsterdam_date(ep.first_seen))
+        ep.location_id = loc.id if loc else None
+        ep.pass_through = pass_through_reason(ep)
+    return episodes
+
+
+def pass_through_reason(ep: ParkingEpisode) -> str | None:
+    """Why `ep` is a reading on the way rather than a stop, or None if it is a stop."""
+    if ep.location_id is not None:
+        return None
+    if ep.last_seen - ep.first_seen < MIN_STOP:
+        return PASS_SHORT
+    return None
+
+
+def derive_legs(episodes: list[ParkingEpisode], locations: Iterable[Location] = ()) -> list[Leg]:
+    """Legs between consecutive stops. Pass-through points become waypoints of the leg they
+    lie on; leading ones are skipped and trailing ones (the car is on its way now) wait for
+    the next stop."""
+    home_ids = {loc.id for loc in locations if loc.type is LocationType.HOME}
+    stops: list[ParkingEpisode] = []
+    between: dict[int, list[Waypoint]] = {}  # index in stops -> waypoints after that stop
+    for ep in episodes:
+        if ep.pass_through is None:
+            stops.append(ep)
+        elif stops:
+            between.setdefault(len(stops) - 1, []).append(
+                Waypoint(ep.first_seen, ep.odometer_km, ep.lat, ep.lon, ep.pass_through)
+            )
+    legs: list[Leg] = []
+    trip_date: date | None = None
+    for i, (ep1, ep2) in enumerate(zip(stops, stops[1:], strict=False)):
+        own_date = amsterdam_date(ep1.last_seen)
+        # a trip spans at most one night; anything longer starts a new day on its own
+        if ep1.location_id in home_ids or trip_date is None or (own_date - trip_date).days > 1:
+            trip_date = own_date
+        legs.append(
+            Leg(
+                id=f"{ep1.vehicle}#{ep1.last_seen.astimezone(AMSTERDAM):%Y%m%dT%H%M}",
+                vehicle=ep1.vehicle,
+                date=trip_date,
+                distance_km=Decimal(ep2.odometer_km - ep1.odometer_km),
+                departed_after=ep1.last_seen,
+                arrived_at=ep2.first_seen,
+                from_location=ep1.location_id,
+                to_location=ep2.location_id,
+                from_latlon=(ep1.lat, ep1.lon) if ep1.lat is not None else None,
+                to_latlon=(ep2.lat, ep2.lon) if ep2.lat is not None else None,
+                odometer_from=ep1.odometer_km,
+                odometer_to=ep2.odometer_km,
+                waypoints=between.get(i, []),
+            )
+        )
+    return legs

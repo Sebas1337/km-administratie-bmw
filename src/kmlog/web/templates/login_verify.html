@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Inloggen{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Inloggen</h1>
+  <form method="post" action="/login/bevestig">
+    <input type="hidden" name="t" value="{{ token }}"><input type="hidden" name="next" value="{{ next }}">
+    <button>Inloggen op dit apparaat</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_map.html" import static_map %}
+{% block title %}Auto{% endblock %}
+{% block content %}
+<h1>Auto</h1>
+
+{% if link is none %}
+<p class="muted">Koppelen kan alleen in de AWS-omgeving (de BMW-tokens staan in Secrets Manager).</p>
+
+{% elif link.linked and link.vehicles and not link.vin %}
+<div class="card">
+  <h2>Kies je auto</h2>
+  <form method="post" action="/auto/voertuig">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% for v in link.vehicles %}<label><input type="radio" name="vin" value="{{ v.vin }}" {% if loop.first %}checked{% endif %}> {{ v.vin }}</label>{% endfor %}
+    <div class="buttons"><button>Deze auto gebruiken</button></div>
+  </form>
+</div>
+
+{% elif link.linked %}
+<div class="card">
+  <h2>Gekoppeld</h2>
+  <div class="totals">
+    <div><div class="muted">VIN</div><div>{{ link.vin or "nog niet bepaald" }}</div></div>
+    <div><div class="muted">CarData-calls vandaag</div><div>{{ quota_used }} / 50</div></div>
+  </div>
+  {% if car_now %}
+  <div class="totals">
+    <div><div class="muted">Kilometerstand</div><div class="big">{{ car_now.odometer_km|km }} km</div></div>
+    <div><div class="muted">Plek</div><div>{{ car_now.place or "–" }}</div></div>
+    <div><div class="muted">Laatst uitgelezen</div><div>{{ car_now.polled_at|daytime }}</div></div>
+  </div>
+  {% if car_now.map %}{{ static_map(car_now.map, car_now.latlon) }}{% endif %}
+  {% else %}<p class="muted">Nog geen km-stand ontvangen; de poller draait elk heel uur (06–23 uur).</p>{% endif %}
+</div>
+<details class="card"><summary>Ontkoppelen</summary>
+  <p>Wist de BMW-tokens en stopt het uitlezen. Ritten, antwoorden en stamdata blijven bewaard; je kunt later opnieuw koppelen.</p>
+  <form method="post" action="/auto/ontkoppelen">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="danger">Auto ontkoppelen</button>
+  </form>
+</details>
+
+{% elif link.pending %}
+<div class="card q">
+  <h2>Bevestig bij BMW</h2>
+  <ol>
+    <li>Open <a href="{{ link.pending.verification_uri }}" rel="noreferrer" target="_blank">de BMW-pagina</a> en log in met je BMW-account.</li>
+    <li>Controleer dat daar deze code staat: <strong>{{ link.pending.user_code }}</strong>, en keur de toegang goed.</li>
+    <li>Kom terug en klik op <em>Ik heb bevestigd</em>.</li>
+  </ol>
+  <div class="buttons">
+    <form class="inline" method="post" action="/auto/bevestigen"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Ik heb bevestigd</button></form>
+    <form class="inline" method="post" action="/auto/annuleren"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary">Annuleren</button></form>
+  </div>
+</div>
+
+{% else %}
+<div class="card">
+  <h2>Auto koppelen</h2>
+  <ol>
+    <li>Ga naar het My BMW-portaal (bmw.nl → inloggen) → <em>Mijn voertuigen</em> → je auto → <em>BMW CarData</em>.</li>
+    <li>Maak een <strong>CarData Client</strong> aan en abonneer hem op <strong>CarData API</strong>.</li>
+    <li>Plak de Client ID hieronder. Je BMW-wachtwoord komt nooit in deze app.</li>
+  </ol>
+  <form method="post" action="/auto/koppelen" class="grid">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div><label>CarData Client ID</label><input name="client_id" value="{{ link.client_id or '' }}" required maxlength="200" autocomplete="off"></div>
+    <div><button>Koppelen</button></div>
+  </form>
+  <p class="muted small">Alleen de hoofdgebruiker (PRIMARY) van de auto krijgt CarData-gegevens.</p>
+</div>
+{% endif %}
+{% endblock %}

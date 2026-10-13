@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Inloggen{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Inloggen</h1>
+  <p>Je krijgt een inloglink per mail. De link werkt 15 minuten en één keer.</p>
+  <form method="post" action="/login"><input type="hidden" name="next" value="{{ next }}"><button>Stuur inloglink</button></form>
+</div>
+{% endblock %}

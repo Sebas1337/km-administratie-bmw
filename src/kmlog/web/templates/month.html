@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_map.html" import static_map %}
+{% block title %}{{ MONTHS[month]|capitalize }} {{ year }}{% endblock %}
+{% block content %}
+<div class="nav">
+  <a href="/maand/{{ prev }}">← vorige</a>
+  <h1>{{ MONTHS[month]|capitalize }} {{ year }}</h1>
+  <a href="/maand/{{ next }}">volgende →</a>
+</div>
+
+{% if car %}
+<div class="card">
+  <h2>Auto nu</h2>
+  <div class="totals">
+    <div><div class="muted">Kilometerstand</div><div class="big">{{ car.odometer_km|km }} km</div></div>
+    <div><div class="muted">Plek</div><div>{{ car.place or "–" }}</div></div>
+    <div><div class="muted">Gemeld door de auto</div><div>{{ car.reported_at|daytime }}</div></div>
+    <div><div class="muted">Laatst uitgelezen</div><div>{{ car.polled_at|daytime }}</div></div>
+  </div>
+  {% if car.map %}{{ static_map(car.map, car.latlon) }}{% endif %}
+</div>
+{% endif %}
+
+{% if questions %}
+<h2>Openstaande vragen ({{ questions|length }})</h2>
+{% for q in questions %}{% include "_question.html" %}{% endfor %}
+{% endif %}
+
+{% if m is none %}
+<p class="muted">Vul eerst de auto en het tarief in bij <a href="/stamdata">Stamdata</a>.</p>
+{% else %}
+<div class="card totals">
+  <div><div class="muted">Zakelijk</div><div class="big">{{ m.business_km|km }} km</div></div>
+  <div><div class="muted">Te declareren</div><div class="big">{{ m.amount_cents|euro }}</div></div>
+  <div><div class="muted">Tarief</div><div>{{ m.cents_per_km|euro }} / km</div></div>
+  {% if m.odometer_start is not none %}<div><div class="muted">Kilometerstand</div><div>{{ m.odometer_start|km }} → {{ m.odometer_end|km }}</div></div>{% endif %}
+  <div><a class="button secondary" href="/maand/{{ '%04d-%02d'|format(year, month) }}.xlsx">Excel</a></div>
+</div>
+{% if m.rows %}
+<p class="tabs">{% if per_trip %}<a href="{{ here }}">Per dag</a> · <strong>Per rit</strong>{% else %}<strong>Per dag</strong> · <a href="{{ here }}?weergave=ritten">Per rit</a>{% endif %}</p>
+{% if per_trip %}
+<div class="scroll"><table>
+  <thead><tr><th>Dag</th><th>Tijd</th><th>Rit</th><th>Km-stand</th><th class="n">Gereden</th><th class="n">Zakelijk</th><th class="n">Privé</th><th>Opmerking</th></tr></thead>
+  <tbody>
+  {% for t in m.trips %}
+  <tr {% if t.open_confirmation %}class="open"{% endif %}>
+    <td class="nowrap"><a href="/dag/{{ t.date.isoformat() }}">{{ t.date|day }}</a></td>
+    <td class="nowrap">{% if t.arrived_at %}na {{ t.departed_after|time }} → {{ t.arrived_at|time }}{% endif %}</td>
+    <td>{{ t.description }}{% if t.route %} <span class="muted">({{ t.route }})</span>{% endif %}</td>
+    <td class="nowrap">{% if t.odometer_from is not none %}{{ t.odometer_from|km }} → {{ t.odometer_to|km }}{% endif %}</td>
+    <td class="n">{{ t.driven_km|km }}</td>
+    <td class="n">{{ t.business_km|km }}</td>
+    <td class="n">{{ t.private_km|km if t.private_km else "" }}</td>
+    <td>{{ t.remark }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><td></td><td></td><td>Totaal</td><td></td><td class="n">{{ m.trips|sum(attribute="driven_km")|km }}</td><td class="n">{{ m.business_km|km }}</td><td class="n">{{ m.trips|sum(attribute="private_km")|km }}</td><td>{{ m.amount_cents|euro }}</td></tr></tfoot>
+</table></div>
+{% else %}
+<div class="scroll"><table>
+  <thead><tr><th>Dag</th><th>Omschrijving</th><th class="n">Km-stand eind</th><th class="n">Gereden</th><th class="n">Zakelijk</th><th class="n">Privé</th><th>Opmerking</th></tr></thead>
+  <tbody>
+  {% for r in m.rows %}
+  <tr {% if r.open_confirmation %}class="open"{% endif %}>
+    <td class="nowrap"><a href="/dag/{{ r.date.isoformat() }}">{{ r.date|day }}</a></td>
+    <td>{{ r.description }}{% if r.routes %} <span class="muted">({{ r.routes }})</span>{% endif %}</td>
+    <td class="n">{{ r.odometer_to|km if r.odometer_to is not none else "" }}</td>
+    <td class="n">{{ r.driven_km|km if r.driven_km else "" }}</td>
+    <td class="n">{{ r.business_km|km if r.driven_km else "" }}</td>
+    <td class="n">{{ r.private_km|km if r.private_km else "" }}</td>
+    <td>{{ r.remark }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><td></td><td>Totaal</td><td></td><td></td><td class="n">{{ m.business_km|km }}</td><td></td><td>{{ m.amount_cents|euro }}</td></tr></tfoot>
+</table></div>
+{% endif %}
+{% else %}
+<p class="muted">Nog geen ritten deze maand.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

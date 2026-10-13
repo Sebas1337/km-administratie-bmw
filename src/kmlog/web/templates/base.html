@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Kilometeradministratie{% endblock %}</title>
+<style>
+:root { --fg:#1d2433; --muted:#5b6475; --line:#d9dee7; --bg:#f6f7f9; --card:#fff;
+  --accent:#1f5fbf; --warn-bg:#fff4d6; --warn:#7a5600; --ok-bg:#e3f4e8; --ok:#1d6b35; --bad:#a32020; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e9ef; --muted:#9aa3b2; --line:#343b48; --bg:#14181f; --card:#1c222b;
+    --accent:#7fb0ff; --warn-bg:#3a3020; --warn:#f3cd75; --ok-bg:#1d3326; --ok:#8fd6a5; --bad:#ff8a8a; }
+}
+* { box-sizing: border-box; }
+body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--fg); background:var(--bg); }
+header { background:var(--card); border-bottom:1px solid var(--line); padding:.6rem 1rem; display:flex; flex-wrap:wrap; gap:.4rem 1rem; align-items:center; }
+header strong { margin-right:auto; }
+header a, header button { color:var(--accent); text-decoration:none; background:none; border:0; font:inherit; cursor:pointer; padding:0; }
+main { max-width:960px; margin:0 auto; padding:1rem; }
+h1 { font-size:1.35rem; margin:.2rem 0 1rem; }
+h2 { font-size:1.1rem; margin:1.5rem 0 .6rem; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.8rem 1rem; margin-bottom:.8rem; }
+.q { border-left:4px solid var(--warn); background:var(--warn-bg); }
+.ok { background:var(--ok-bg); color:var(--ok); border-radius:6px; padding:.5rem .8rem; margin-bottom:1rem; }
+.err { color:var(--bad); }
+.muted { color:var(--muted); }
+.badge { display:inline-block; font-size:.8rem; padding:.05rem .45rem; border-radius:99px; background:var(--warn-bg); color:var(--warn); }
+.scroll { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; background:var(--card); }
+.map { position:relative; display:block; overflow:hidden; width:100%; margin:.6rem 0 .2rem; border-radius:6px; background:#ddd; }
+.map img { position:absolute; max-width:none; }
+.map .pin { position:absolute; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; background:#d33; border:3px solid #fff; box-shadow:0 0 0 1px #0006; }
+.small { font-size:.8rem; }
+.nowrap { white-space:nowrap; }
+th, td { text-align:left; padding:.4rem .5rem; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-weight:600; font-size:.85rem; color:var(--muted); }
+td.n, th.n { text-align:right; white-space:nowrap; }
+tr.open td { background:var(--warn-bg); }
+tfoot td { font-weight:600; }
+a { color:var(--accent); }
+.nav { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1rem; }
+form.inline { display:inline; }
+.buttons { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.5rem; }
+button, .button { font:inherit; padding:.55rem .9rem; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; text-decoration:none; display:inline-block; }
+button.secondary, .button.secondary { background:transparent; color:var(--accent); }
+button.danger { background:transparent; color:var(--bad); border-color:var(--bad); }
+input, select { font:inherit; padding:.45rem .5rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); max-width:100%; }
+label { display:block; font-size:.85rem; color:var(--muted); margin:.4rem 0 .15rem; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:.2rem .8rem; align-items:end; }
+details summary { cursor:pointer; color:var(--accent); }
+.big { font-size:1.6rem; font-weight:600; }
+.totals { display:flex; flex-wrap:wrap; gap:1rem 2rem; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Kilometeradministratie</strong>
+  {% if session %}
+  <a href="/maand/{{ today.strftime('%Y-%m') }}">Maand</a>
+  <a href="/jaar/{{ today.year }}">Jaar</a>
+  <a href="/stamdata">Stamdata</a>
+  <a href="/auto">Auto</a>
+  {% if open_count %}<span class="badge">{{ open_count }} open</span>{% endif %}
+  <form class="inline" method="post" action="/uitloggen"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Uitloggen</button></form>
+  {% endif %}
+</header>
+<main>
+{% if ok %}<div class="ok">{{ ok }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
