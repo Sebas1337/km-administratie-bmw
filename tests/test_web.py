@@ -154,7 +154,10 @@ def test_logout_clears_cookie(env):
 
 def test_safe_next():
     assert safe_next("/dag/2026-10-07") == "/dag/2026-10-07"
-    for bad in ("https://evil.example", "//evil.example", "/\\evil", None, ""):
+    assert safe_next("/maand/2026-10?weergave=ritten") == "/maand/2026-10?weergave=ritten"
+    bad_values = ("https://evil.example", "//evil.example", "/\\evil", None, "")
+    # browsers strip tab/newline from a Location: "/\t/evil.example" would be "//evil.example"
+    for bad in (*bad_values, "/\t/evil.example", "/\n/evil.example", "/\r\n/x", "/ /x"):
         assert safe_next(bad) == "/"
 
 
