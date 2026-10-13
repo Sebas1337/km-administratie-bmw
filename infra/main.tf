@@ -35,17 +35,19 @@ resource "aws_dynamodb_table" "data" {
     enabled = true
   }
 
-  deletion_protection_enabled = true
+  deletion_protection_enabled = !var.allow_destroy
 }
 
 # Value is written by the web UI (Auto page) and rotated by the poller — never by Terraform.
 resource "aws_secretsmanager_secret" "cardata" {
-  name        = "kmlog/cardata"
-  description = "BMW CarData client id + rotating OAuth tokens, vin, container id"
+  name                    = "kmlog/cardata"
+  description             = "BMW CarData client id + rotating OAuth tokens, vin, container id"
+  recovery_window_in_days = var.allow_destroy ? 0 : 30
 }
 
 resource "aws_s3_bucket" "reports" {
-  bucket = "kmlog-reports-${local.account_id}-${var.region}"
+  bucket        = "kmlog-reports-${local.account_id}-${var.region}"
+  force_destroy = var.allow_destroy
 }
 
 resource "aws_s3_bucket_versioning" "reports" {

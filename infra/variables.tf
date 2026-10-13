@@ -26,6 +26,15 @@ variable "quota_limit" {
   default     = 40
 }
 
+variable "allow_destroy" {
+  description = <<-EOT
+    Only to remove the installation (infra/README.md "Verwijderen"): turns off the table's deletion
+    protection, lets Terraform empty the reports bucket and deletes secrets without a recovery window.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "monthly_budget_usd" {
   type    = number
   default = 5

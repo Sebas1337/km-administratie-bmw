@@ -25,8 +25,15 @@ variable "region" {
 
 data "aws_caller_identity" "current" {}
 
+variable "allow_destroy" {
+  description = "Only to remove the installation: lets Terraform empty the (versioned) state bucket."
+  type        = bool
+  default     = false
+}
+
 resource "aws_s3_bucket" "tfstate" {
-  bucket = "kmlog-tfstate-${data.aws_caller_identity.current.account_id}-${var.region}"
+  bucket        = "kmlog-tfstate-${data.aws_caller_identity.current.account_id}-${var.region}"
+  force_destroy = var.allow_destroy
 }
 
 resource "aws_s3_bucket_versioning" "tfstate" {

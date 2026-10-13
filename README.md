@@ -263,6 +263,9 @@ uv run pytest
 uv run ruff check . && uv run ruff format --check .
 ```
 
+Werk je met een AI-assistent? Die vindt in [`AGENTS.md`](AGENTS.md)
+de aanwijzingen voor deployen, beheren en aanpassen.
+
 De rekenregels zijn getest op de voorbeelddagen uit `docs/ONTWERP.md` §7.3
 (`tests/test_voorbeelddagen.py`). Lokaal kan km-admin ook met SQLite werken
 (`uv run kmlog --help`), bijvoorbeeld om een maandstaat te maken uit een database-export.

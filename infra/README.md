@@ -102,7 +102,21 @@ vervangen: nieuw sleutelpaar, nieuw TXT-record en
 
 ## Verwijderen
 
-De tabel heeft deletion protection, en de buckets bevatten data. Exporteer eerst wat je wilt
-bewaren (maandstaten uit S3, `kmlog stamdata --export`). Zet daarna
-`deletion_protection_enabled = false` in `main.tf`, apply, leeg de buckets, en draai
-`terraform -chdir=infra destroy`. Verwijder in het BMW-portaal ook de CarData Client.
+Dit wist al je ritten, antwoorden en instellingen. Bewaar eerst wat je wilt houden: de
+maandstaten (`aws s3 sync s3://kmlog-reports-<account>-<regio> ./reports-backup`) en de stamdata
+(`uv run kmlog --store dynamodb stamdata --export data/stamdata.toml`). Ontkoppel de auto op de
+pagina *Auto*, zodat ook de container bij BMW verdwijnt.
+
+```sh
+set -a; . ./.env; set +a
+# 1. beveiliging uit: deletion protection van de tabel, bucket mag niet-leeg weg, secrets direct weg
+terraform -chdir=infra apply -var allow_destroy=true
+# 2. alles van de hoofd-stack weg
+terraform -chdir=infra destroy -var allow_destroy=true
+# 3. de state-bucket (bootstrap): eerst force_destroy aan, dan weg
+terraform -chdir=infra/bootstrap apply -var allow_destroy=true
+terraform -chdir=infra/bootstrap destroy -var allow_destroy=true
+```
+
+Verwijder daarna in het BMW-portaal de CarData Client, en in IAM de deploy-gebruiker en de
+twee policies.

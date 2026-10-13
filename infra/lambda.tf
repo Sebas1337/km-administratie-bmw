@@ -142,8 +142,9 @@ resource "random_password" "web_session" {
 }
 
 resource "aws_secretsmanager_secret" "web" {
-  name        = "kmlog/web"
-  description = "HMAC key for web UI session cookies and CSRF tokens"
+  name                    = "kmlog/web"
+  description             = "HMAC key for web UI session cookies and CSRF tokens"
+  recovery_window_in_days = var.allow_destroy ? 0 : 30
 }
 
 resource "aws_secretsmanager_secret_version" "web" {
