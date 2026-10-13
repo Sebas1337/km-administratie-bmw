@@ -1,9 +1,9 @@
-# km-admin: automatische kilometeradministratie voor je BMW
+# km-administratie-bmw: automatische kilometeradministratie voor je BMW
 
-*English summary: km-admin reads the odometer and position of your BMW every hour through the
+*English summary: km-administratie-bmw reads the odometer and position of your BMW every hour through the
 official BMW CarData API, turns that into trips, classifies them as business or private using
 your own places and routes, and mails you a monthly mileage statement (Excel). It runs
-serverless in your own AWS account for a few euros a month. The UI and documents are in Dutch.*
+serverless in your own AWS account for < 1 euro a month. The UI and documents are in Dutch.*
 
 Rijd je zakelijk met je privé-BMW en declareer je de kilometers bij je eigen bv? Dan hoef je
 met km-admin geen rittenadministratie meer bij te houden. De auto is de bron: elk uur wordt de
