@@ -87,7 +87,7 @@ Randvoorwaarden
 ## 5. Architectuur (AWS)
 
 ```
-EventBridge Scheduler (elk uur 06–23 Europe/Amsterdam)
+EventBridge Scheduler (elk uur, standaard 06–23 Europe/Amsterdam; instelbaar)
    └─► Lambda kmlog-poller
          ├─ Secrets Manager kmlog/cardata: client_id, roterende tokens, vin, container id
          ├─ OAuth refresh als het access token verlopen is; nieuwe refresh token direct opslaan
@@ -379,6 +379,7 @@ tijdstempels.
 | 2026-10-13 | Easy DKIM als default, Bring Your Own DKIM optioneel | Easy DKIM werkt bij de meeste DNS-providers; BYODKIM alleen voor providers zonder CNAME onder `_domainkey`. |
 | 2026-10-13 | Auto koppelen via de webinterface i.p.v. lokaal script + `.env` | Geen lokale BMW-tokens of scripts nodig; de device-code flow past op twee knoppen (aanvragen, bevestigen) zonder wachtlus in de Lambda. Eén auto per installatie. |
 | 2026-10-13 | Vergoeding per jaar in de webinterface; jaar zonder tarief gebruikt het laatste eerdere | Een nieuw jaar mag de maandstaat van januari niet blokkeren; wijkt het tarief af, dan stel je het in. |
+| 2026-10-13 | Poll-venster instelbaar (`poll_start_hour`/`poll_end_hour`, standaard 06–23) | Wie 's nachts rijdt, wil ook dan metingen; 24 polls per dag passen in het quotum (50, eigen grens 40). Terraform bewaakt dat het venster past. |
 
 ## 12. Bronnen
 

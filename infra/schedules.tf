@@ -1,8 +1,23 @@
-# Hourly 06:00-23:00 Amsterdam time = 18 polls/day (BMW quota: 50 calls/24h).
+# Hourly on the hour, poll_start_hour..poll_end_hour Amsterdam time (default 06-23 = 18 polls/day).
+# One poll = one CarData call; BMW allows 50 per 24h, the poller stops itself at quota_limit.
+locals {
+  poll_wraps    = var.poll_end_hour < var.poll_start_hour
+  poll_hours    = local.poll_wraps ? "${var.poll_start_hour}-23,0-${var.poll_end_hour}" : "${var.poll_start_hour}-${var.poll_end_hour}"
+  polls_per_day = (local.poll_wraps ? 24 - var.poll_start_hour + var.poll_end_hour : var.poll_end_hour - var.poll_start_hour) + 1
+}
+
 resource "aws_scheduler_schedule" "poll" {
   name                         = "kmlog-poll"
-  schedule_expression          = "cron(0 6-23 * * ? *)"
+  schedule_expression          = "cron(0 ${local.poll_hours} * * ? *)"
   schedule_expression_timezone = "Europe/Amsterdam"
+
+  lifecycle {
+    precondition {
+      # keep a few calls spare for linking the car and (re)creating the telematic container
+      condition     = local.polls_per_day <= var.quota_limit - 5
+      error_message = "${local.polls_per_day} polls/day leave too little of quota_limit (${var.quota_limit}); shorten the poll window."
+    }
+  }
 
   flexible_time_window {
     mode = "OFF"

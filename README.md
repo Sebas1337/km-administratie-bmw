@@ -49,7 +49,7 @@ en op de 1e van de maand komt de maandstaat in je mail.
 
 ```mermaid
 flowchart LR
-  BMW[BMW CarData API] -- elk uur 06-23 --> P[Lambda kmlog-poller]
+  BMW[BMW CarData API] -- elk uur --> P[Lambda kmlog-poller]
   P --> DB[(DynamoDB)]
   DB --> W[Lambda kmlog-web<br/>Function URL]
   W -- maillink --> You((jij))
@@ -57,8 +57,10 @@ flowchart LR
   DB --> R[Lambda kmlog-report<br/>1e van de maand] --> S3[(S3: maandstaten)] & Mail
 ```
 
-1. **Pollen.** Elk heel uur tussen 06:00 en 23:00 haalt de poller kilometerstand en positie
-   op. BMW staat 50 API-calls per 24 uur toe; km-admin gebruikt er standaard maximaal 40.
+1. **Pollen.** Elk heel uur haalt de poller kilometerstand en positie op, standaard van 06:00
+   tot en met 23:00 (18 calls per dag). Rijd je ook 's nachts, zet dan `poll_start_hour = 0` in
+   `terraform.tfvars` (24 calls per dag). BMW staat 50 API-calls per 24 uur toe; km-admin stopt
+   zichzelf bij 40, en Terraform weigert een venster dat daar niet ruim in past.
 2. **Ritten afleiden.** Zolang de kilometerstand gelijk blijft, staat de auto stil. Tussen
    twee stilstanden ligt een rit met precies het verschil in kilometerstand.
 3. **Classificeren.** Ritten worden vergeleken met je bekende routes (±5 km). Wat niet past,
@@ -144,6 +146,7 @@ Zet `report_email` (en eventuele andere variabelen uit
 ```hcl
 report_email = "jij@jouwdomein.nl"
 # alert_email = "andere@jouwdomein.nl"   # alarmen en budget, standaard report_email
+# poll_start_hour = 0                     # ook 's nachts pollen (standaard 6 t/m 23)
 ```
 
 ### 5. Mail activeren

@@ -1,6 +1,6 @@
 """Hourly poller: CarData telematicData -> Observation -> re-derived legs (ONTWERP.md §5).
 
-Invoked by EventBridge Scheduler (06-23 Europe/Amsterdam). Order of business:
+Invoked hourly by EventBridge Scheduler (default 06-23 Amsterdam, see infra). Order of business:
 1. Load the token state from Secrets Manager; refresh when the access token expires within
    5 minutes. Refresh tokens rotate, so the new state is written back immediately.
 2. Count every API call against a per-UTC-day quota in DynamoDB; refuse beyond QUOTA_LIMIT.

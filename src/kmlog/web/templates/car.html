@@ -31,7 +31,7 @@
     <div><div class="muted">Laatst uitgelezen</div><div>{{ car_now.polled_at|daytime }}</div></div>
   </div>
   {% if car_now.map %}{{ static_map(car_now.map, car_now.latlon) }}{% endif %}
-  {% else %}<p class="muted">Nog geen km-stand ontvangen; de poller draait elk heel uur (06–23 uur).</p>{% endif %}
+  {% else %}<p class="muted">Nog geen km-stand ontvangen; de poller draait op het hele uur.</p>{% endif %}
 </div>
 <details class="card"><summary>Ontkoppelen</summary>
   <p>Wist de BMW-tokens en stopt het uitlezen. Ritten, antwoorden en stamdata blijven bewaard; je kunt later opnieuw koppelen.</p>

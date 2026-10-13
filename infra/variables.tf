@@ -20,6 +20,26 @@ variable "vehicle_id" {
   default     = "car"
 }
 
+variable "poll_start_hour" {
+  description = "First hourly poll (Europe/Amsterdam). 0 with poll_end_hour 23 = around the clock."
+  type        = number
+  default     = 6
+  validation {
+    condition     = var.poll_start_hour >= 0 && var.poll_start_hour <= 23 && floor(var.poll_start_hour) == var.poll_start_hour
+    error_message = "poll_start_hour: a whole hour 0-23."
+  }
+}
+
+variable "poll_end_hour" {
+  description = "Last hourly poll (inclusive). Smaller than poll_start_hour = the window runs past midnight."
+  type        = number
+  default     = 23
+  validation {
+    condition     = var.poll_end_hour >= 0 && var.poll_end_hour <= 23 && floor(var.poll_end_hour) == var.poll_end_hour
+    error_message = "poll_end_hour: a whole hour 0-23."
+  }
+}
+
 variable "quota_limit" {
   description = "Max CarData API calls per UTC day the poller may use (BMW limit: 50)."
   type        = number
