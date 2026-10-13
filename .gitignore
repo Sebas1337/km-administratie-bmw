@@ -24,3 +24,7 @@ infra/**/*.tfvars
 .idea/
 .vscode/
 infra/**/tfplan
+
+# personal, untracked: an own devcontainer variant and local notes for tools
+.devcontainer/local/
+*.local.md
