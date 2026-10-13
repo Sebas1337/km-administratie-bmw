@@ -412,3 +412,9 @@ def save_poll_window(store: Store, *, start_hour: int, end_hour: int, quota_limi
         )
     store.put_settings(dataclasses.replace(current, **dataclasses.asdict(settings)))
     return settings
+
+
+def save_mail_settings(store: Store, *, missed_days: bool) -> Settings:
+    settings = dataclasses.replace(store.settings(), mail_missed_days=missed_days)
+    store.put_settings(settings)
+    return settings

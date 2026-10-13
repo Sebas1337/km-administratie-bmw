@@ -66,10 +66,13 @@ class Settings:
 
     The poller is invoked every hour on the hour; it only calls BMW within the poll window
     (Europe/Amsterdam hours, both ends included; end < start runs past midnight).
+    `mail_missed_days`: include rule 7 ("gemist?") days in the daily mail; off by default,
+    because every private drive on a workday would otherwise give a mail with nothing to answer.
     """
 
     poll_start_hour: int = 6
     poll_end_hour: int = 23
+    mail_missed_days: bool = False
 
     @property
     def poll_hours(self) -> list[int]:

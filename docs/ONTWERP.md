@@ -97,7 +97,7 @@ EventBridge Scheduler (elk uur; de poller slaat uren buiten het venster over, st
 
 EventBridge Scheduler (dagelijks 20:00)
    └─► Lambda kmlog-notify: herberekent de laatste 31 dagen, verloopt oude vragen,
-         mailt nieuwe vragen en "gemist?"-dagen (alleen als er iets nieuws is)
+         mailt nieuwe vragen (en desgewenst "gemist?"-dagen) als er iets nieuws is
 
 EventBridge Scheduler (1e van de maand 06:00)
    └─► Lambda kmlog-report → maandstaat .xlsx (+ jaaroverzicht in december) → S3 → SES-mail
@@ -218,7 +218,7 @@ Regels, in volgorde:
 | 4 | Eén eindpunt onbekend (zichtbare stop ≥ 1 uur op onbekende plek) | Vraag: *Zakelijk* (leg volledig zakelijk; aanbieden om de plek als `business`-locatie op te slaan) / *Privé* (zoals regel 3; aanbieden als `private` op te slaan). Default bij geen antwoord: privé. |
 | 5 | Beide eindpunten onbekend, of van/naar home zonder bekende bestemming | Privé tenzij bevestigd zakelijk. Vraag alleen op werkdagen en bij ≥ 20 km. |
 | 6 | Auto in klantzone op weekend of feestdag | Volgens regel 1–2, met vraag *Bevestig* / *Privé* (vlag `weekend_or_holiday`). |
-| 7 | Dag met gereden km maar zonder enkele zakelijke leg, op een werkdag | Informatieve melding "gemist?" (geen vergoeding zonder bevestiging). |
+| 7 | Dag met gereden km maar zonder enkele zakelijke leg, op een werkdag | Informatieve melding "gemist?" (geen vergoeding zonder bevestiging). Alleen per mail als dat in Instellingen aanstaat (standaard uit). |
 | 8 | Kilometerstand-delta van een dag wijkt > 20% af van de som van de legs | Datakwaliteitsvlag (gemiste poll); handmatige controle. |
 
 Dagen zonder autorit: de auto beweegt niet → geen episodes, geen legs, niets te doen.
@@ -289,14 +289,15 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
 - **Kanaal = e-mail via SES** (zelfde geverifieerde adres als de maandstaat). `kmlog-notify` draait
   dagelijks om 20:00: herberekent de laatste 31 dagen (antwoorden opnieuw toepassen, vragen ouder
   dan 7 dagen → `timed_out`, standaard blijft), en stuurt **alleen als er iets nieuws is** één mail
-  met de nieuwe vragen en "gemist?"-dagen (regel 7) plus een link naar de webinterface. Een vraag
-  wordt nooit twee keer gemaild.
+  met de nieuwe vragen en, als dat in Instellingen aanstaat, "gemist?"-dagen (regel 7) plus een
+  link naar de webinterface. Staat het uit, dan worden "gemist?"-dagen stil als verwerkt onthouden
+  (aanzetten mailt geen achterstand). Een vraag wordt nooit twee keer gemaild.
 - **Webinterface** = Lambda `kmlog-web` achter een **Function URL**, server-side HTML, geen
   JavaScript, mobiel eerst. Pagina's: maand (ritten per dag of per rit, totaal, bedrag,
   Excel-download, openstaande vragen met één-tik-knoppen, laatste positie van de auto), dag (legs met
   tijden en een kaartje van de aankomstplek, zakelijke km corrigeren met notitie, handmatige rit
   toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, instellingen (auto, vergoeding per
-  jaar, uitleesvenster, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
+  jaar, uitleesvenster, meldingen, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
 - **Inloggen**: één gebruiker, geen wachtwoord. Knop "stuur inloglink" → mail naar het vaste adres
   (geen invoerveld) met een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
   max. 5 mails per uur). De link opent een pagina met een knop; pas die POST verbruikt het token
@@ -381,6 +382,7 @@ tijdstempels.
 | 2026-10-13 | Vergoeding per jaar in de webinterface (tabel, toevoegen/wijzigen/verwijderen); jaar zonder tarief gebruikt het laatste eerdere | Een nieuw jaar mag de maandstaat van januari niet blokkeren; wijkt het tarief af, dan stel je het in. |
 | 2026-10-13 | Uitleesvenster instelbaar in de webinterface (standaard 06–23); de scheduler roept de poller elk uur aan en die slaat uren buiten het venster over vóór elke BMW-call | Wie 's nachts rijdt, wil ook dan metingen; 24 polls per dag passen in het quotum (50, eigen grens 40). Zonder deploy aan te passen; een overgeslagen uur kost alleen een Lambda-aanroep. De webinterface weigert een venster dat niet past. |
 | 2026-10-13 | Pagina "Stamdata" heet "Instellingen" (`/instellingen`, `/stamdata` stuurt door) | Er staan nu ook auto, tarief en uitleesvenster op; "stamdata" blijft de term voor locaties, routes en het TOML-bestand. |
+| 2026-10-13 | "gemist?"-mail (regel 7) uitzetbaar in Instellingen, standaard uit | Elke privérit op een werkdag gaf een mail zonder iets te beantwoorden (ook onder de 20 km van regel 5); de mail moet alleen komen als er iets te doen is. |
 
 ## 12. Bronnen
 

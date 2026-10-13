@@ -8,12 +8,14 @@ Routes
     GET  /maand/YYYY-MM.xlsx      maandstaat als Excel
     GET  /dag/YYYY-MM-DD          ritten van één dag: corrigeren, handmatige rit, vragen
     GET  /jaar/YYYY               jaaroverzicht
-    GET  /instellingen            auto, tarieven, uitlees-venster, locaties, routes (was /stamdata)
+    GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties, routes
+                                  (was /stamdata)
     GET  /auto                    BMW CarData koppelen / ontkoppelen (kmlog.carlink)
     POST /antwoord, /antwoord/herstel, /stop, /correctie, /correctie/herstel, /rit,
          /rit/verwijder, /instellingen/voertuig, /instellingen/tarief,
-         /instellingen/tarief/verwijder, /instellingen/uitlezen, /instellingen/locatie,
-         /instellingen/locatie/verwijder, /instellingen/route, /instellingen/route/verwijder,
+         /instellingen/tarief/verwijder, /instellingen/uitlezen, /instellingen/meldingen,
+         /instellingen/locatie, /instellingen/locatie/verwijder, /instellingen/route,
+         /instellingen/route/verwijder,
          /auto/koppelen, /auto/bevestigen, /auto/voertuig, /auto/annuleren, /auto/ontkoppelen,
          /uitloggen
     GET  /login, POST /login (mail link), GET+POST /login/bevestig
@@ -391,6 +393,9 @@ class WebApp:
                     end_hour=_int(f.get("end_hour"), -1),
                     quota_limit=self.quota_limit,
                 )
+                return redirect(_with_ok("/instellingen", "opgeslagen"))
+            case "/instellingen/meldingen":
+                actions.save_mail_settings(store, missed_days=f.get("missed_days") == "1")
                 return redirect(_with_ok("/instellingen", "opgeslagen"))
             case path if path.startswith("/auto/"):
                 return self._car_post(path, f)

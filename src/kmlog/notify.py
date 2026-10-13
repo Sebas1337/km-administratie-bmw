@@ -4,8 +4,10 @@ Run once a day (20:00 Europe/Amsterdam):
 1. Re-derive the last WINDOW_DAYS days: this re-applies answers and marks questions older than
    CONFIRM_TIMEOUT_DAYS as TIMED_OUT (the conservative default stays).
 2. Collect open questions not mailed before, plus rule 7 ("gemist?": a workday with driven km
-   but no business km) for days not mailed before.
+   but no business km) for days not mailed before, if `Settings.mail_missed_days` is on.
 3. Nothing new -> no mail. Otherwise one mail with a link to the web UI; remember what was sent.
+   With the setting off, "gemist?" days are remembered without a mail, so switching it on later
+   does not mail the past month in one go.
 """
 
 from __future__ import annotations
@@ -45,9 +47,13 @@ def collect(store: Store, vehicle: str, now: datetime) -> Digest:
     reprocess(store, vehicle, first, today, now)
     legs = store.legs(vehicle, first, today)
     seen = store.notified(vehicle)
+    missed = [d for d in missed_business_days(legs) if f"missed:{d.isoformat()}" not in seen]
+    if missed and not store.settings().mail_missed_days:
+        store.mark_notified(vehicle, [f"missed:{d.isoformat()}" for d in missed], now)
+        missed = []
     return Digest(
         questions=[q for q in open_questions(legs) if f"q:{q.segment_id}" not in seen],
-        missed=[d for d in missed_business_days(legs) if f"missed:{d.isoformat()}" not in seen],
+        missed=missed,
     )
 
 
