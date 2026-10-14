@@ -24,6 +24,7 @@ locals {
     memory  = 512
   }
   all_functions = merge(local.lambdas, { notify = local.notify_fn })
+  web_url       = var.web_domain != null ? "https://${var.web_domain}/" : aws_lambda_function_url.web.function_url
   common_env = {
     TABLE_NAME = aws_dynamodb_table.data.name
     VEHICLE_ID = var.vehicle_id
@@ -39,6 +40,7 @@ locals {
     })
     web = merge(local.common_env, {
       REPORT_EMAIL  = var.report_email
+      WEB_DOMAIN    = coalesce(var.web_domain, "")
       WEB_SECRET_ID = aws_secretsmanager_secret.web.name
       SECRET_ID     = aws_secretsmanager_secret.cardata.name # Auto page: link / unlink the car
       QUOTA_LIMIT   = tostring(var.quota_limit)
@@ -94,7 +96,7 @@ resource "aws_lambda_function" "notify" {
   environment {
     variables = merge(local.common_env, {
       REPORT_EMAIL = var.report_email
-      WEB_URL      = aws_lambda_function_url.web.function_url
+      WEB_URL      = local.web_url
     })
   }
 
@@ -108,6 +110,79 @@ resource "aws_lambda_function_event_invoke_config" "notify_no_retry" {
 }
 
 # --- web UI: public Function URL, authentication in the app (magic link + signed cookie) -------
+
+# Optional own domain (var.web_domain): CloudFront in front of the Function URL. A Function URL only
+# answers to its own hostname, so CloudFront cannot forward the viewer's Host header; it sends
+# X-Forwarded-Host instead, which the app trusts only when it equals WEB_DOMAIN (kmlog/web/app.py).
+# Two-step apply, because CloudFront needs an issued certificate: see infra/README.md "Eigen domein".
+resource "aws_acm_certificate" "web" {
+  count             = var.web_domain != null ? 1 : 0
+  provider          = aws.us_east_1
+  domain_name       = var.web_domain
+  validation_method = "DNS"
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Waits until the DNS record from output `web_domain_dns_records` exists and ACM has issued.
+resource "aws_acm_certificate_validation" "web" {
+  count           = var.web_domain != null ? 1 : 0
+  provider        = aws.us_east_1
+  certificate_arn = aws_acm_certificate.web[0].arn
+  timeouts {
+    create = "30m"
+  }
+}
+
+resource "aws_cloudfront_distribution" "web" {
+  count        = var.web_domain != null ? 1 : 0
+  enabled      = true
+  comment      = "kmlog-web"
+  aliases      = [var.web_domain]
+  price_class  = "PriceClass_100"
+  http_version = "http2and3"
+
+  origin {
+    domain_name = trimsuffix(trimprefix(aws_lambda_function_url.web.function_url, "https://"), "/")
+    origin_id   = "kmlog-web"
+    custom_header {
+      name  = "X-Forwarded-Host"
+      value = var.web_domain
+    }
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "kmlog-web"
+    compress         = true
+
+    viewer_protocol_policy = "redirect-to-https"
+    # AWS managed policies: Managed-CachingDisabled and Managed-AllViewerExceptHostHeader
+    # (cookies, query string and headers go to the app, never the viewer's Host)
+    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = aws_acm_certificate_validation.web[0].certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}
 
 resource "aws_lambda_function_url" "web" {
   function_name      = aws_lambda_function.fn["web"].function_name

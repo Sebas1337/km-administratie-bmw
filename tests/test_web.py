@@ -378,3 +378,15 @@ def test_day_page_shows_odometer_and_arrival_map_per_trip(env):
     assert "onderweg" not in body  # pass-through points only in the readings table
     assert body.count('class="map"') == 2  # arrival at the client and at home
     assert "<td>41.138</td>" in body
+
+
+def test_forwarded_host_trusted_only_for_configured_domain():
+    own = "kmlog.example.nl"
+    for forwarded, expected in ((own, own), ("evil.example", HOST), (None, HOST)):
+        ev = event("GET", "/login")
+        if forwarded:
+            ev["headers"]["x-forwarded-host"] = forwarded
+        assert Request.from_event(ev, own).host == expected
+    ev = event("GET", "/login")
+    ev["headers"]["x-forwarded-host"] = own
+    assert Request.from_event(ev).host == HOST  # no WEB_DOMAIN configured: never trusted

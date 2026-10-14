@@ -6,7 +6,7 @@ de 2.048 tekens die een inline user policy mag hebben.
 
 | Naam | Bestand | Waarvoor |
 |---|---|---|
-| `kmlog-deployer` | `deployer-policy.json` | Aan de IAM-gebruiker hangen. Mag alleen resources met prefix `kmlog` beheren, in `eu-central-1`. |
+| `kmlog-deployer` | `deployer-policy.json` | Aan de IAM-gebruiker hangen. Mag alleen resources met prefix `kmlog` beheren, in `eu-central-1`; alleen ACM en CloudFront (optioneel eigen domein) gebruiken `us-east-1` resp. wereldwijd. |
 | `kmlog-boundary` | `boundary-policy.json` | **Niet** aan iets hangen. Wordt de *permissions boundary* van elke rol die Terraform maakt. |
 
 Waarom een boundary: wie rollen mag aanmaken en aan een Lambda mag geven, kan zichzelf via die
