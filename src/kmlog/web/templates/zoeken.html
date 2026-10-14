@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Adres of bedrijf zoeken{% endblock %}
+{% block content %}
+<h1>Adres of bedrijf zoeken</h1>
+<div class="card">
+  <form method="get" action="/instellingen/zoek" class="grid">
+    <div><label>Adres of bedrijfsnaam</label><input name="q" value="{{ q }}" required maxlength="120" placeholder="bijv. Rijkswaterstaat Griffioenlaan Utrecht" autofocus></div>
+    <div><button>Zoeken</button></div>
+  </form>
+  <p class="muted small">Let op: de zoekterm gaat naar OpenStreetMap. Zoek niet op een privéadres (zoals je woonadres); vul die coördinaten liever <a href="/instellingen">handmatig</a> in.</p>
+</div>
+{% if error %}<div class="card"><p class="err">{{ error }}</p></div>{% endif %}
+{% if q and not error %}
+  {% for p in places %}
+  <div class="card">
+    <strong>{{ p.name }}</strong><br>
+    <span class="muted">{{ p.address or "geen adres bekend" }}</span>
+    · <a href="{{ (p.lat, p.lon)|osm }}" rel="noreferrer" target="_blank">kaart</a><br>
+    <a href="/instellingen/nieuw?{{ {'name': p.name, 'lat': p.lat, 'lon': p.lon}|urlencode }}"><strong>Kies deze →</strong></a>
+  </div>
+  {% else %}
+  <div class="card"><p>Niets gevonden. Probeer een straat met huisnummer en plaats, of de bedrijfsnaam met de plaats erbij.</p></div>
+  {% endfor %}
+  <div class="muted small">Zoekresultaten © <a href="https://www.openstreetmap.org/copyright" rel="noreferrer" target="_blank">OpenStreetMap</a>-bijdragers</div>
+{% endif %}
+<p><a href="/instellingen">← Terug naar instellingen</a></p>
+{% endblock %}

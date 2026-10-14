@@ -8,6 +8,7 @@ import pytest
 
 from kmlog.aws import web as web_handler
 from kmlog.derive import AMSTERDAM
+from kmlog.geocode import GeocodeError, Place
 from kmlog.model import LegSource, LegStatus, LocationType, Observation
 from kmlog.process import rederive
 from kmlog.store.sqlite import SqliteStore
@@ -378,3 +379,116 @@ def test_day_page_shows_odometer_and_arrival_map_per_trip(env):
     assert "onderweg" not in body  # pass-through points only in the readings table
     assert body.count('class="map"') == 2  # arrival at the client and at home
     assert "<td>41.138</td>" in body
+
+
+# --- address / company search -------------------------------------------------------------
+
+
+class FakeGeocoder:
+    def __init__(self, places=(), error=None):
+        self.places, self.error, self.calls = list(places), error, []
+
+    def search(self, query, near=None):
+        self.calls.append((query, near))
+        if self.error:
+            raise GeocodeError(self.error)
+        return self.places
+
+
+RWS = Place("Rijkswaterstaat", "Griffioenlaan 2, 3526 LA Utrecht", 52.05852, 5.10193)
+
+
+def test_settings_page_offers_search_with_privacy_warning_only_when_enabled(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    page = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "/instellingen/zoek" not in page
+    app.geocoder = FakeGeocoder()
+    page = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert 'action="/instellingen/zoek"' in page
+    assert "gaat naar OpenStreetMap" in page and "privéadres" in page
+
+
+def test_search_lists_results_biased_to_home_with_attribution(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    app.geocoder = fake = FakeGeocoder([RWS])
+    home = next(loc for loc in store.locations() if loc.type is LocationType.HOME)
+    resp = app(event("GET", "/instellingen/zoek", cookie=cookie, query={"q": "Rijkswaterstaat"}))
+    assert resp["statusCode"] == 200
+    body = resp["body"]
+    assert fake.calls == [("Rijkswaterstaat", (home.lat, home.lon))]
+    assert "Griffioenlaan 2, 3526 LA Utrecht" in body
+    assert "/instellingen/nieuw?name=Rijkswaterstaat&amp;lat=52.05852&amp;lon=5.10193" in body
+    assert "OpenStreetMap</a>-bijdragers" in body and "privéadres" in body
+
+
+def test_search_escapes_the_query_and_handles_no_hits(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    app.geocoder = FakeGeocoder([])
+    body = app(
+        event("GET", "/instellingen/zoek", cookie=cookie, query={"q": "<script>x</script>"})
+    )["body"]
+    assert "<script>x" not in body and "&lt;script&gt;" in body
+    assert "Niets gevonden" in body
+
+
+def test_search_failure_and_disabled_search_point_to_the_manual_form(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    q = {"q": "Dam 1"}
+    off = app(event("GET", "/instellingen/zoek", cookie=cookie, query=q))
+    assert off["statusCode"] == 200 and "niet beschikbaar" in off["body"]
+    app.geocoder = FakeGeocoder(
+        error="De zoekdienst gaf geen antwoord. Vul de locatie handmatig in."
+    )
+    body = app(event("GET", "/instellingen/zoek", cookie=cookie, query=q))["body"]
+    assert "Vul de locatie handmatig in" in body and "Niets gevonden" not in body
+
+
+def test_search_pages_require_login(env):
+    app, *_ = env
+    for path in ("/instellingen/zoek", "/instellingen/nieuw"):
+        assert app(event("GET", path, query={"q": "x"}))["statusCode"] == 303
+
+
+def test_chosen_result_prefills_the_form_and_saves_through_the_normal_post(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    query = {"name": "<b>Bedrijf</b>", "lat": "52.05852", "lon": "5.10193"}
+    page = app(event("GET", "/instellingen/nieuw", cookie=cookie, query=query))["body"]
+    assert 'value="&lt;b&gt;Bedrijf&lt;/b&gt;"' in page and "<b>Bedrijf" not in page
+    assert 'name="lat" value="52.058520"' in page and 'class="map"' in page
+    form = {
+        "csrf": csrf(app, cookie),
+        "name": "Rijkswaterstaat",
+        "type": "client",
+        "lat": "52.058520",
+        "lon": "5.101930",
+        "radius_m": "200",
+    }
+    assert app(event("POST", "/instellingen/locatie", form, cookie))["statusCode"] == 303
+    saved = next(loc for loc in store.locations() if loc.name == "Rijkswaterstaat")
+    assert (saved.type, saved.lat, saved.lon) == (LocationType.CLIENT, 52.05852, 5.10193)
+
+
+@pytest.mark.parametrize("query", [{}, {"lat": "x", "lon": "1"}, {"lat": "91", "lon": "5"}])
+def test_prefilled_form_rejects_bad_coordinates(env, query):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    resp = app(event("GET", "/instellingen/nieuw", cookie=cookie, query=query))
+    assert resp["statusCode"] == 400
+
+
+def test_lambda_wiring_of_the_geocoder(monkeypatch):
+    store = SqliteStore()
+    monkeypatch.setenv("GEOCODER_URL", "off")
+    assert web_handler._geocoder(store) is None
+    monkeypatch.delenv("GEOCODER_URL")
+    monkeypatch.setenv("GEOCODER_CONTACT", "https://example.org/km")
+    monkeypatch.setenv("GEOCODER_COUNTRIES", "nl,be")
+    g = web_handler._geocoder(store)
+    assert g.base_url == "https://nominatim.openstreetmap.org" and g.countries == "nl,be"
+    assert g.headers["User-Agent"] == "km-admin (https://example.org/km)"
+    assert g.allow_request() is True  # first request of this second

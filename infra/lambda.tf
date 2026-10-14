@@ -42,7 +42,12 @@ locals {
       WEB_SECRET_ID = aws_secretsmanager_secret.web.name
       SECRET_ID     = aws_secretsmanager_secret.cardata.name # Auto page: link / unlink the car
       QUOTA_LIMIT   = tostring(var.quota_limit)
-    })
+      # address/company search on the Instellingen page
+      GEOCODER_URL       = var.geocoder_url
+      GEOCODER_COUNTRIES = var.geocoder_countries
+      },
+      var.geocoder_contact == null ? {} : { GEOCODER_CONTACT = var.geocoder_contact },
+    )
   }
 }
 

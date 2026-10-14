@@ -298,6 +298,7 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   tijden en een kaartje van de aankomstplek, zakelijke km corrigeren met notitie, handmatige rit
   toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, instellingen (auto, vergoeding per
   jaar, uitleesvenster, meldingen, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
+  Een locatie voeg je toe met coördinaten of via zoeken op adres/bedrijf (zie hieronder).
 - **Inloggen**: één gebruiker, geen wachtwoord. Knop "stuur inloglink" → mail naar het vaste adres
   (geen invoerveld) met een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
   max. 5 mails per uur). De link opent een pagina met een knop; pas die POST verbruikt het token
@@ -310,6 +311,13 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   wordt genegeerd en kan dus nooit méér km opleveren.
 - **Onbekende stop opslaan**: als zakelijke locatie → routes naar/van die plek worden aangemaakt met
   de werkelijk gereden km (de rit telt volledig, volgende keer zonder vraag); als privé → regel 3.
+- **Locatie zoeken**: `/instellingen/zoek?q=` laat de Lambda Nominatim (OpenStreetMap) bevragen en
+  toont maximaal vijf resultaten met adres; "Kies deze" opent `/instellingen/nieuw` met naam en
+  coördinaten voorgevuld en een kaartje, en opslaan gaat via dezelfde POST als een handmatige
+  locatie. Alleen op een expliciete zoekopdracht (de gebruiksregels van Nominatim verbieden
+  autocomplete), met een limiet van 1 verzoek/s (teller in de store), een cache in het geheugen van
+  de Lambda, voorkeur voor resultaten rond thuis (`viewbox`, niet beperkend) en zonder
+  bushaltes/straten (`category=highway`). Bij een storing blijft het handmatige formulier.
 - **Handmatige rit**: via de dagpagina, voor als de auto geen data gaf.
 - **Stamdata**: na bewerken in de webinterface is de database de bron. `kmlog stamdata --export`
   schrijft de database naar TOML; `kmlog stamdata` (import) weigert een afwijkende database te
@@ -372,6 +380,7 @@ tijdstempels.
 | 2026-10-12 | Doorrijpunten: onbekende plek met < 10 min aantoonbare stilstand = geen stop | Een poll midden in de terugrit gaf een onterechte vraag. Korte stops vallen zo net als ongeziene stops binnen de routemarge; grote omwegen blijven opvallen (regel 2). |
 | 2026-10-12 | Straal thuis ruim genoeg kiezen (bijv. 300 m) | Een meting bij vertrek kan net buiten 200 m liggen; dan wordt een privérit bij het woon-werkverkeer opgeteld. |
 | 2026-10-12 | Geen CarData Stream (MQTT) | Vraagt een altijd-open verbinding (enkele dollars per maand vs < $1 nu, één verbinding per account, tokens delen) voor weinig winst in de declaratie. |
+| 2026-10-14 | Locaties zoeken op adres of bedrijf via de publieke Nominatim, alleen OpenStreetMap, met een waarschuwing i.p.v. een blokkade voor privéadressen | Typen van coördinaten is de grootste drempel bij het instellen. Nominatim vindt bedrijven en adressen goed, maar postcode + huisnummer slecht; PDOK (alleen adressen) is daarom bewust niet toegevoegd. De zoekterm gaat naar OSMF, vandaar waarschuwing en uit te zetten met `geocoder_url = "off"`. Een radius-suggestie uit de bounding box is weggelaten: voor bedrijven is die ~10 m. |
 | 2026-10-12 | Ritten-overzicht naast de maandstaat (web-schakelaar + Excel-tabblad), declaratie blijft per dag | Per rit inzien is handig; de dagregels zijn wat de BV betaalt. Een leg is door het uurpollen niet altijd één echte rit; daarom "vertrokken na". |
 | 2026-10-13 | `isMoving` en contact niet in de container; doorrijpunt alleen op tijd | Een hele rit lang leeg, ook tijdens het rijden; de i4 levert ze niet via REST. |
 | 2026-10-13 | `Referrer-Policy: same-origin` (header, geen `<meta name="referrer">`) | Met `no-referrer` sturen browsers `Origin: null` bij elk formulier; de herkomstcontrole weigerde daardoor álle acties na het inloggen. |
