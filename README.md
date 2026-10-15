@@ -33,7 +33,8 @@ en op de 1e van de maand komt de maandstaat in je mail.
   elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), instellingen, en
   het koppelen van de auto. Inloggen gaat zonder wachtwoord, met een link per mail.
 - **Draait in je eigen AWS-account**, serverless, voor een paar euro per maand. Er gaat
-  niets naar derden behalve de kaarttegels van OpenStreetMap in je browser.
+  niets naar derden behalve de kaarttegels van OpenStreetMap in je browser en de zoektermen
+  die je zelf invoert bij "locatie zoeken" (die gaan via je eigen Lambda naar OpenStreetMap).
 
 | Dag met kaartjes per rit | Per rit, met kilometerstanden |
 |---|---|
@@ -206,7 +207,8 @@ Ga naar **Instellingen**:
 - **Uitlezen**: het venster waarin de auto elk uur wordt uitgelezen (standaard 06:00–23:00).
 - **Locaties**: in elk geval **Thuis** en je klant of kantoor, met coördinaten (rechtsklik in
   Google Maps → kopieer de coördinaten). Een onbekende stop kun je ook later vanuit een vraag
-  als locatie opslaan.
+  als locatie opslaan. Zoek een zakelijk adres of bedrijf op naam of adres (via OpenStreetMap)
+  in plaats van coördinaten over te typen.
 - **Routes**: de afstand (enkele reis) tussen thuis en elke zakelijke locatie, met één
   standaardroute per paar. Heb je bij file een vaste alternatieve route, voeg die dan ook toe.
   Zo'n rit telt dan zonder vraag als zakelijk.

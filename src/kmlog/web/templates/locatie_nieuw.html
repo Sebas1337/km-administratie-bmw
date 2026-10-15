@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_map.html" import static_map %}
+{% block title %}Locatie toevoegen{% endblock %}
+{% block content %}
+<h1>Locatie toevoegen</h1>
+<p class="muted">Controleer op de kaart of dit de goede plek is, kies het soort locatie en sla op.</p>
+<div class="card">
+  {{ static_map(map, latlon) }}
+  <form method="post" action="/instellingen/locatie" class="grid">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div><label>Naam</label><input name="name" value="{{ name }}" required maxlength="80"></div>
+    <div><label>Soort</label><select name="type">{% for v, label in LOCATION_TYPES.items() %}<option value="{{ v }}" {% if v == "business" %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+    <div><label>Breedtegraad</label><input name="lat" value="{{ lat }}" required></div>
+    <div><label>Lengtegraad</label><input name="lon" value="{{ lon }}" required></div>
+    <div><label>Straal (m)</label><input name="radius_m" value="200" inputmode="numeric"></div>
+    <div><button>Toevoegen</button></div>
+  </form>
+</div>
+<p><a href="/instellingen">← Annuleren</a></p>
+{% endblock %}

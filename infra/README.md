@@ -36,6 +36,9 @@ Zie [`variables.tf`](variables.tf); zet ze in `infra/terraform.tfvars` (gitignor
 | `quota_limit` | `40` | max CarData-calls per UTC-dag (BMW: 50) |
 | `monthly_budget_usd` | `5` | |
 | `boundary_policy_name` | `kmlog-boundary` | naam van de boundary-policy uit `iam/` |
+| `geocoder_url` | `https://nominatim.openstreetmap.org` | server voor het zoeken van adressen en bedrijven; `off` zet zoeken uit |
+| `geocoder_countries` | `nl` | landcodes waarop gezocht wordt, bijv. `nl,be,de` |
+| `geocoder_contact` | de repo-URL | contact-URL in de User-Agent van zoekopdrachten |
 | `dkim_private_key_file` | — | alleen voor Bring Your Own DKIM, zie hieronder |
 
 ## Bijwerken
@@ -91,6 +94,18 @@ Zet in `terraform.tfvars` `dkim_private_key_file = "../data/dkim/kmlog.private.p
 `kmlog._domainkey.<domein>`. Bewaar het sleutelbestand: zonder faalt `terraform plan`. Sleutel
 vervangen: nieuw sleutelpaar, nieuw TXT-record en
 `terraform apply -replace=aws_sesv2_email_identity.domain`.
+
+## Adres zoeken
+
+Op de pagina *Instellingen* zoek je een locatie op adres of bedrijfsnaam; het resultaat vult het
+formulier "Locatie toevoegen" voor. De Lambda `kmlog-web` vraagt dat aan de publieke
+[Nominatim](https://nominatim.org/)-server van OpenStreetMap, dus alleen op een expliciete
+zoekopdracht van jou (geen autocomplete, niets periodiek), met maximaal één verzoek per seconde,
+een User-Agent met de repo-URL en resultaten die een dag in het geheugen blijven staan. Dat past
+binnen het [gebruiksbeleid](https://operations.osmfoundation.org/policies/nominatim/). De zoekterm
+gaat dus naar OpenStreetMap (via de Lambda, dus zonder jouw IP-adres of browser).
+Wil je dat niet, zet `geocoder_url = "off"`; het handmatige formulier blijft werken. Een eigen
+Nominatim-server of een andere compatibele dienst zet je in `geocoder_url`.
 
 ## Andere regio
 
