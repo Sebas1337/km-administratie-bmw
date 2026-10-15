@@ -398,7 +398,7 @@ class FakeGeocoder:
 RWS = Place("Rijkswaterstaat", "Griffioenlaan 2, 3526 LA Utrecht", 52.05852, 5.10193)
 
 
-def test_settings_page_offers_search_with_privacy_warning_only_when_enabled(env):
+def test_settings_page_offers_search_only_when_enabled(env):
     app, store, mails, clock = env
     cookie = login(app, mails)
     page = app(event("GET", "/instellingen", cookie=cookie))["body"]
@@ -406,7 +406,6 @@ def test_settings_page_offers_search_with_privacy_warning_only_when_enabled(env)
     app.geocoder = FakeGeocoder()
     page = app(event("GET", "/instellingen", cookie=cookie))["body"]
     assert 'action="/instellingen/zoek"' in page
-    assert "gaat naar OpenStreetMap" in page and "privéadres" in page
 
 
 def test_search_lists_results_biased_to_home_with_attribution(env):
@@ -420,7 +419,7 @@ def test_search_lists_results_biased_to_home_with_attribution(env):
     assert fake.calls == [("Rijkswaterstaat", (home.lat, home.lon))]
     assert "Griffioenlaan 2, 3526 LA Utrecht" in body
     assert "/instellingen/nieuw?name=Rijkswaterstaat&amp;lat=52.05852&amp;lon=5.10193" in body
-    assert "OpenStreetMap</a>-bijdragers" in body and "privéadres" in body
+    assert "OpenStreetMap</a>-bijdragers" in body
 
 
 def test_search_escapes_the_query_and_handles_no_hits(env):

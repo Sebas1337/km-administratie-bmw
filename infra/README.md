@@ -103,7 +103,7 @@ formulier "Locatie toevoegen" voor. De Lambda `kmlog-web` vraagt dat aan de publ
 zoekopdracht van jou (geen autocomplete, niets periodiek), met maximaal één verzoek per seconde,
 een User-Agent met de repo-URL en resultaten die een dag in het geheugen blijven staan. Dat past
 binnen het [gebruiksbeleid](https://operations.osmfoundation.org/policies/nominatim/). De zoekterm
-gaat dus naar OpenStreetMap; de pagina waarschuwt daarvoor en vraagt om geen privéadres te zoeken.
+gaat dus naar OpenStreetMap (via de Lambda, dus zonder jouw IP-adres of browser).
 Wil je dat niet, zet `geocoder_url = "off"`; het handmatige formulier blijft werken. Een eigen
 Nominatim-server of een andere compatibele dienst zet je in `geocoder_url`.
 
