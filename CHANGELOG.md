@@ -7,6 +7,8 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
 ### Toegevoegd
 - Optioneel eigen domein voor de webinterface (`web_domain`), via CloudFront met een
   ACM-certificaat; ook de links in de mails gebruiken het dan. Nodig: een DNS-provider die
@@ -73,7 +75,8 @@ Eerste versie, zoals live sinds 10 oktober 2026 (stand van PR #2).
 - Maandstaat en jaaroverzicht als Excel, maandelijks per mail; dagelijkse melding van open vragen.
 - "gemist?"-mail als instelling, standaard uit.
 
-[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.1...v0.3.0
