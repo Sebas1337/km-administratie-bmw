@@ -45,7 +45,9 @@ come from the tag's section in `CHANGELOG.md`, so that section must exist before
 
 - **Deploy a version** (also downgrade): `scripts/deploy.sh vX.Y.Z`. It checks out the tag, verifies
   the release zip, checks that the state bucket belongs to the logged-in account, runs `terraform
-  apply` (read the plan) and returns to the previous branch. Running version: footer of the web UI,
+  apply` and returns to the previous branch. As an assistant (no interactive prompt): run
+  `scripts/deploy.sh vX.Y.Z --plan`, read the plan (same rules as above: stop on destroy/replace of
+  data), then `scripts/deploy.sh vX.Y.Z --apply`, which applies exactly that saved plan. Running version: footer of the web UI,
   `version` field in every log line.
 - **Release**: on main, move `[Unreleased]` in `CHANGELOG.md` to `[X.Y.Z] - date`, bump
   `pyproject.toml` (and `uv lock`), commit via a PR, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
