@@ -7,6 +7,12 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+### Toegevoegd
+- Optioneel eigen domein voor de webinterface (`web_domain`), via CloudFront met een
+  ACM-certificaat; ook de links in de mails gebruiken het dan. Nodig: een DNS-provider die
+  CNAME-records met een underscore kan maken, zoals Cloudflare. Zie infra/README, *Eigen domein*
+  (PR #3, door @dutchdinosaur639).
+
 ## [0.3.2] - 2026-10-21
 
 ### Gerepareerd
