@@ -7,6 +7,8 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
 ### Gewijzigd
 - **Afstanden worden geleerd** in plaats van ingevuld: per paar plekken de meest voorkomende
   afstand van de laatste 10 aannemelijke ritten. Een rit tot 15% langer telt volledig zakelijk
@@ -52,7 +54,8 @@ Eerste versie, zoals live sinds 10 oktober 2026 (stand van PR #2).
 - Maandstaat en jaaroverzicht als Excel, maandelijks per mail; dagelijkse melding van open vragen.
 - "gemist?"-mail als instelling, standaard uit.
 
-[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Sebas1337/km-administratie-bmw/releases/tag/v0.1.0
