@@ -8,9 +8,11 @@ import pytest
 
 from kmlog.aws import web as web_handler
 from kmlog.derive import AMSTERDAM
-from kmlog.model import LegSource, LegStatus, LocationType, Observation
+from kmlog.geocode import GeocodeError, Place
+from kmlog.model import LegSource, LegStatus, LocationType, Observation, SentReport
 from kmlog.process import rederive
 from kmlog.store.sqlite import SqliteStore
+from kmlog.version import VERSION
 from kmlog.web.app import Request, WebApp, safe_next
 from kmlog.web.auth import Auth
 from test_aws_handlers import seeded
@@ -19,6 +21,7 @@ from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations
 
 HOST = "abc123.lambda-url.eu-central-1.on.aws"
 KEY = b"k" * 32
+EMAIL = "jij@example.nl"
 EVENING = datetime(2026, 10, 7, 21, 30, tzinfo=UTC)
 
 
@@ -37,7 +40,8 @@ def env():
     rederive(store, "car", EVENING)
     mails = []
     clock = Clock(EVENING)
-    app = WebApp(store, Auth(KEY, store), "car", lambda s, b: mails.append((s, b)), now=clock)
+    auth = Auth(KEY, store, EMAIL)
+    app = WebApp(store, auth, "car", lambda s, b: mails.append((s, b)), now=clock)
     return app, store, mails, clock
 
 
@@ -61,7 +65,7 @@ def event(method, path, form=None, cookie=None, query=None, origin=None):
 
 def login(app, mails) -> str:
     """Full magic-link flow; returns the session cookie ('name=value')."""
-    app(event("POST", "/login", {"next": "/"}))
+    app(event("POST", "/login", {"email": EMAIL, "next": "/"}))
     link = re.search(r"https://\S+", mails[-1][1]).group(0)
     assert link.startswith(f"https://{HOST}/login/bevestig?")
     query = dict(p.split("=", 1) for p in link.split("?", 1)[1].split("&"))
@@ -97,7 +101,7 @@ def test_magic_link_is_single_use_and_expires(env):
     reuse = app(event("POST", "/login/bevestig", {"t": token}))
     assert reuse["statusCode"] == 400 and not reuse["cookies"]
 
-    app(event("POST", "/login", {}))
+    app(event("POST", "/login", {"email": EMAIL}))
     token = re.search(r"t=([^&\s]+)", mails[-1][1]).group(1)
     clock.now = EVENING + timedelta(minutes=16)
     assert app(event("POST", "/login/bevestig", {"t": token}))["statusCode"] == 400
@@ -106,11 +110,34 @@ def test_magic_link_is_single_use_and_expires(env):
 def test_login_mail_is_rate_limited(env):
     app, store, mails, clock = env
     for _ in range(5):
-        assert app(event("POST", "/login", {}))["statusCode"] == 200
-    assert app(event("POST", "/login", {}))["statusCode"] == 429
+        assert app(event("POST", "/login", {"email": EMAIL}))["statusCode"] == 200
+    assert app(event("POST", "/login", {"email": EMAIL}))["statusCode"] == 429
     assert len(mails) == 5
     clock.now = EVENING + timedelta(hours=1)
-    assert app(event("POST", "/login", {}))["statusCode"] == 200
+    assert app(event("POST", "/login", {"email": EMAIL}))["statusCode"] == 200
+
+
+def test_login_mail_only_for_the_configured_address(env):
+    app, store, mails, clock = env
+    for email in ("", "info@example.nl", "jij@example.nl.evil", "x" * 300):
+        resp = app(event("POST", "/login", {"email": email}))
+        assert resp["statusCode"] == 200 and "Check je mail" in resp["body"]
+    for _ in range(10):  # wrong addresses never use up the hourly limit
+        app(event("POST", "/login", {"email": "bot@example.nl"}))
+    assert mails == []
+    resp = app(event("POST", "/login", {"email": "  JIJ@Example.nl "}))
+    assert resp["statusCode"] == 200 and len(mails) == 1
+
+
+def test_login_page_asks_for_the_address(env):
+    app, *_ = env
+    body = app(event("GET", "/login"))["body"]
+    assert 'name="email"' in body and 'type="email"' in body
+
+
+def test_auth_needs_a_login_address():
+    with pytest.raises(ValueError):
+        Auth(KEY, SqliteStore(), "")
 
 
 def test_tampered_or_expired_cookie_is_rejected(env):
@@ -121,7 +148,7 @@ def test_tampered_or_expired_cookie_is_rejected(env):
     payload, sig = value.split(".")
     forged = f"{name}={payload[:-1]}A.{sig}"
     assert app(event("GET", "/instellingen", cookie=forged))["statusCode"] == 303
-    other_key = Auth(b"x" * 32, store).new_session_cookie(EVENING).split(";")[0]
+    other_key = Auth(b"x" * 32, store, EMAIL).new_session_cookie(EVENING).split(";")[0]
     assert app(event("GET", "/instellingen", cookie=other_key))["statusCode"] == 303
     clock.now = EVENING + timedelta(days=31)
     assert app(event("GET", "/instellingen", cookie=cookie))["statusCode"] == 303
@@ -139,10 +166,10 @@ def test_post_without_valid_csrf_or_from_other_origin_is_rejected(env):
     assert app(evil)["statusCode"] == 403
     opaque = event("POST", "/instellingen/locatie", good, cookie, origin="null")
     assert app(opaque)["statusCode"] == 403
-    assert len(store.locations()) == 2
+    assert len(store.locations()) == 3
     ok = event("POST", "/instellingen/locatie", good, cookie, origin=f"https://{HOST}")
     assert app(ok)["statusCode"] == 303
-    assert len(store.locations()) == 3
+    assert len(store.locations()) == 4
 
 
 def test_logout_clears_cookie(env):
@@ -271,11 +298,11 @@ def test_day_page_correction_and_manual_trip(env):
     assert app(event("POST", "/rit/verwijder", form, cookie))["statusCode"] == 400
 
 
-def test_save_unknown_stop_as_business_location(env):
-    app, store, mails, _ = env
+def _day_c_in_store(store):
+    day = date(2026, 10, 8)
     store.put_observations(
         observations(
-            date(2026, 10, 8),
+            day,
             [
                 ("00:00", "07:30", "home", 41_000),
                 ("08:30", "16:30", "client", 41_071),
@@ -285,28 +312,86 @@ def test_save_unknown_stop_as_business_location(env):
         )
     )
     rederive(store, "car", datetime(2026, 10, 8, 21, 30, tzinfo=UTC))
+    return day
+
+
+def test_save_unknown_place_as_client(env):
+    app, store, mails, clock = env
+    day = _day_c_in_store(store)
     cookie = login(app, mails)
-    day = date(2026, 10, 8)
-    seg = store.legs("car", day, day)[1].segment_id
+    page = app(event("GET", f"/dag/{day}", cookie=cookie))["body"]
+    assert "Plek opslaan als klant, zakelijk of privé" in page
+    assert "Tussenstop: zakelijk telt de verwachte 70 km" in page
+    leg = store.legs("car", day, day)[1]  # client -> unknown
     form = {
         "csrf": csrf(app, cookie),
-        "segment": seg,
-        "lat": str(UNKNOWN[0]),
-        "lon": str(UNKNOWN[1]),
+        "leg": leg.id,
+        "date": day.isoformat(),
         "name": "Kantoor Amsterdam",
-        "type": "business",
+        "type": "client",
         "next": f"/dag/{day}",
     }
-    assert app(event("POST", "/stop", form, cookie))["statusCode"] == 303
+    clock.now = datetime(2026, 11, 3, 12, tzinfo=UTC)  # after the monthly mail: still recomputed
+    assert app(event("POST", "/plek", form, cookie))["statusCode"] == 303
     loc = next(loc for loc in store.locations() if loc.name == "Kantoor Amsterdam")
-    assert loc.type is LocationType.BUSINESS
+    assert loc.type is LocationType.CLIENT
     legs = store.legs("car", day, day)
-    assert int(sum(leg.business_km for leg in legs)) == 160
-    assert all(leg.status is LegStatus.AUTO for leg in legs)  # routes created: rule 1
-    assert {r.distance_km for r in store.routes() if loc.id in (r.location_a, r.location_b)} == {
-        38,
-        51,
-    }
+    assert int(sum(leg.business_km for leg in legs)) == 160  # two plausible first trips
+    assert all(leg.status is LegStatus.AUTO for leg in legs)
+    assert store.routes() == []
+    form["leg"] = legs[0].id  # home -> client: not an unknown place
+    assert app(event("POST", "/plek", form, cookie))["statusCode"] == 400
+
+
+def test_settings_page_shows_learned_distances(env):
+    app, store, mails, _ = env
+    cookie = login(app, mails)
+    body = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "Afstanden" in body and "Klant ↔ Thuis" in body
+    assert "70 km" in body and "standaardroute" not in body
+    form = {"csrf": csrf(app, cookie)}
+    assert app(event("POST", "/instellingen/route", form, cookie))["statusCode"] == 404
+
+
+def test_weekend_trip_toch_zakelijk(env):
+    app, store, mails, clock = env
+    saturday = date(2026, 10, 10)
+    trip = [
+        ("00:00", "07:30", "home", 41_000),
+        ("08:30", "16:30", "client", 41_070),
+        ("17:45", "23:00", "home", 41_140),
+    ]
+    store.put_observations(observations(saturday, trip))
+    clock.now = datetime(2026, 10, 10, 21, 30, tzinfo=UTC)
+    rederive(store, "car", clock.now)
+    cookie = login(app, mails)
+    page = app(event("GET", f"/dag/{saturday}", cookie=cookie))["body"]
+    assert page.count("Toch zakelijk</button>") == 2
+    assert "Privé: zaterdag. Toch zakelijk? Dan telt 70 km." in page
+    seg = store.legs("car", saturday, saturday)[0].segment_id
+    form = {"csrf": csrf(app, cookie), "segment": seg, "answer": "confirm", "next": "/"}
+    assert app(event("POST", "/antwoord", form, cookie))["statusCode"] == 303
+    assert [int(leg.business_km) for leg in store.legs("car", saturday, saturday)] == [70, 0]
+    month = app(event("GET", "/maand/2026-10", cookie=cookie))["body"]
+    assert "Weekendritten naar klanten" in month  # the trip back still counts as private
+
+
+def test_month_page_review_lists_and_resend(env):
+    app, store, mails, clock = env
+    resent = []
+    app.resend_report = lambda y, m: resent.append((y, m))
+    day = _day_c_in_store(store)
+    cookie = login(app, mails)
+    body = app(event("GET", "/maand/2026-10", cookie=cookie))["body"]
+    assert "Onbekende plekken" in body and f"/dag/{day}" in body
+    assert "Gewijzigd na verzending" not in body
+    store.put_sent_report("car", SentReport(2026, 10, clock.now, 10, 250))
+    body = app(event("GET", "/maand/2026-10", cookie=cookie))["body"]
+    assert "Gewijzigd na verzending" in body
+    form = {"csrf": csrf(app, cookie)}
+    resp = app(event("POST", "/maand/2026-10/mail", form, cookie))
+    assert resp["statusCode"] == 303 and resent == [(2026, 10)]
+    assert app(event("POST", "/maand/2026-09/mail", form, cookie))["statusCode"] == 400
 
 
 def test_year_page_stamdata_page_and_xlsx(env):
@@ -316,26 +401,10 @@ def test_year_page_stamdata_page_and_xlsx(env):
     body = app(event("GET", "/jaar/2026", cookie=cookie))["body"]
     assert "Jaaroverzicht 2026" in body and "september" in body
     body = app(event("GET", "/instellingen", cookie=cookie))["body"]
-    assert "Thuis" in body and "A4" in body
+    assert "Thuis" in body
     resp = app(event("GET", "/maand/2026-09.xlsx", cookie=cookie))
     assert resp["isBase64Encoded"] and "attachment" in resp["headers"]["Content-Disposition"]
     assert app(event("GET", "/nope", cookie=cookie))["statusCode"] == 404
-
-
-def test_route_save_keeps_one_default(env):
-    app, store, mails, _ = env
-    cookie = login(app, mails)
-    form = {
-        "csrf": csrf(app, cookie),
-        "from": "home",
-        "to": "client",
-        "name": "A12",
-        "km": "75",
-        "default": "1",
-    }
-    assert app(event("POST", "/instellingen/route", form, cookie))["statusCode"] == 303
-    defaults = [r.name for r in store.routes() if r.is_default]
-    assert defaults == ["A12"]
 
 
 def test_lambda_handler_logs_without_query(env, capsys):
@@ -344,6 +413,14 @@ def test_lambda_handler_logs_without_query(env, capsys):
     assert resp["statusCode"] == 200
     out = capsys.readouterr().out
     assert '"path": "/login"' in out and "secret" not in out
+    assert f'"version": "{VERSION}"' in out
+
+
+def test_version_in_footer_only_when_logged_in(env):
+    app, _, mails, _ = env
+    assert VERSION not in app(event("GET", "/login"))["body"]
+    cookie = login(app, mails)
+    assert f"km-admin {VERSION}" in app(event("GET", "/instellingen", cookie=cookie))["body"]
 
 
 def test_request_parses_base64_body():
@@ -378,6 +455,118 @@ def test_day_page_shows_odometer_and_arrival_map_per_trip(env):
     assert "onderweg" not in body  # pass-through points only in the readings table
     assert body.count('class="map"') == 2  # arrival at the client and at home
     assert "<td>41.138</td>" in body
+
+
+# --- address / company search -------------------------------------------------------------
+
+
+class FakeGeocoder:
+    def __init__(self, places=(), error=None):
+        self.places, self.error, self.calls = list(places), error, []
+
+    def search(self, query, near=None):
+        self.calls.append((query, near))
+        if self.error:
+            raise GeocodeError(self.error)
+        return self.places
+
+
+RWS = Place("Rijkswaterstaat", "Griffioenlaan 2, 3526 LA Utrecht", 52.05852, 5.10193)
+
+
+def test_settings_page_offers_search_only_when_enabled(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    page = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "/instellingen/zoek" not in page
+    app.geocoder = FakeGeocoder()
+    page = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert 'action="/instellingen/zoek"' in page
+
+
+def test_search_lists_results_biased_to_home_with_attribution(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    app.geocoder = fake = FakeGeocoder([RWS])
+    home = next(loc for loc in store.locations() if loc.type is LocationType.HOME)
+    resp = app(event("GET", "/instellingen/zoek", cookie=cookie, query={"q": "Rijkswaterstaat"}))
+    assert resp["statusCode"] == 200
+    body = resp["body"]
+    assert fake.calls == [("Rijkswaterstaat", (home.lat, home.lon))]
+    assert "Griffioenlaan 2, 3526 LA Utrecht" in body
+    assert "/instellingen/nieuw?name=Rijkswaterstaat&amp;lat=52.05852&amp;lon=5.10193" in body
+    assert "OpenStreetMap</a>-bijdragers" in body
+
+
+def test_search_escapes_the_query_and_handles_no_hits(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    app.geocoder = FakeGeocoder([])
+    body = app(
+        event("GET", "/instellingen/zoek", cookie=cookie, query={"q": "<script>x</script>"})
+    )["body"]
+    assert "<script>x" not in body and "&lt;script&gt;" in body
+    assert "Niets gevonden" in body
+
+
+def test_search_failure_and_disabled_search_point_to_the_manual_form(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    q = {"q": "Dam 1"}
+    off = app(event("GET", "/instellingen/zoek", cookie=cookie, query=q))
+    assert off["statusCode"] == 200 and "niet beschikbaar" in off["body"]
+    app.geocoder = FakeGeocoder(
+        error="De zoekdienst gaf geen antwoord. Vul de locatie handmatig in."
+    )
+    body = app(event("GET", "/instellingen/zoek", cookie=cookie, query=q))["body"]
+    assert "Vul de locatie handmatig in" in body and "Niets gevonden" not in body
+
+
+def test_search_pages_require_login(env):
+    app, *_ = env
+    for path in ("/instellingen/zoek", "/instellingen/nieuw"):
+        assert app(event("GET", path, query={"q": "x"}))["statusCode"] == 303
+
+
+def test_chosen_result_prefills_the_form_and_saves_through_the_normal_post(env):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    query = {"name": "<b>Bedrijf</b>", "lat": "52.05852", "lon": "5.10193"}
+    page = app(event("GET", "/instellingen/nieuw", cookie=cookie, query=query))["body"]
+    assert 'value="&lt;b&gt;Bedrijf&lt;/b&gt;"' in page and "<b>Bedrijf" not in page
+    assert 'name="lat" value="52.058520"' in page and 'class="map"' in page
+    form = {
+        "csrf": csrf(app, cookie),
+        "name": "Rijkswaterstaat",
+        "type": "client",
+        "lat": "52.058520",
+        "lon": "5.101930",
+        "radius_m": "200",
+    }
+    assert app(event("POST", "/instellingen/locatie", form, cookie))["statusCode"] == 303
+    saved = next(loc for loc in store.locations() if loc.name == "Rijkswaterstaat")
+    assert (saved.type, saved.lat, saved.lon) == (LocationType.CLIENT, 52.05852, 5.10193)
+
+
+@pytest.mark.parametrize("query", [{}, {"lat": "x", "lon": "1"}, {"lat": "91", "lon": "5"}])
+def test_prefilled_form_rejects_bad_coordinates(env, query):
+    app, store, mails, clock = env
+    cookie = login(app, mails)
+    resp = app(event("GET", "/instellingen/nieuw", cookie=cookie, query=query))
+    assert resp["statusCode"] == 400
+
+
+def test_lambda_wiring_of_the_geocoder(monkeypatch):
+    store = SqliteStore()
+    monkeypatch.setenv("GEOCODER_URL", "off")
+    assert web_handler._geocoder(store) is None
+    monkeypatch.delenv("GEOCODER_URL")
+    monkeypatch.setenv("GEOCODER_CONTACT", "https://example.org/km")
+    monkeypatch.setenv("GEOCODER_COUNTRIES", "nl,be")
+    g = web_handler._geocoder(store)
+    assert g.base_url == "https://nominatim.openstreetmap.org" and g.countries == "nl,be"
+    assert g.headers["User-Agent"] == "km-admin (https://example.org/km)"
+    assert g.allow_request() is True  # first request of this second
 
 
 def test_forwarded_host_trusted_only_for_configured_domain():

@@ -8,14 +8,15 @@ Routes
     GET  /maand/YYYY-MM.xlsx      maandstaat als Excel
     GET  /dag/YYYY-MM-DD          ritten van één dag: corrigeren, handmatige rit, vragen
     GET  /jaar/YYYY               jaaroverzicht
-    GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties, routes
-                                  (was /stamdata)
+    GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties,
+                                  geleerde afstanden (was /stamdata)
+    GET  /instellingen/zoek       adres of bedrijf zoeken (OpenStreetMap) voor een nieuwe locatie
+    GET  /instellingen/nieuw      formulier "locatie toevoegen", voorgevuld met een zoekresultaat
     GET  /auto                    BMW CarData koppelen / ontkoppelen (kmlog.carlink)
-    POST /antwoord, /antwoord/herstel, /stop, /correctie, /correctie/herstel, /rit,
-         /rit/verwijder, /instellingen/voertuig, /instellingen/tarief,
+    POST /antwoord, /antwoord/herstel, /plek, /correctie, /correctie/herstel, /rit,
+         /rit/verwijder, /maand/YYYY-MM/mail, /instellingen/voertuig, /instellingen/tarief,
          /instellingen/tarief/verwijder, /instellingen/uitlezen, /instellingen/meldingen,
-         /instellingen/locatie, /instellingen/locatie/verwijder, /instellingen/route,
-         /instellingen/route/verwijder,
+         /instellingen/locatie, /instellingen/locatie/verwijder,
          /auto/koppelen, /auto/bevestigen, /auto/voertuig, /auto/annuleren, /auto/ontkoppelen,
          /uitloggen
     GET  /login, POST /login (mail link), GET+POST /login/bevestig
@@ -38,8 +39,9 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from .. import actions, carlink
 from ..actions import ActionError, open_questions
 from ..cardata import CarDataClient, CarDataError, QuotaExceeded
-from ..classify import Answer, Question
+from ..classify import Answer, Question, explain
 from ..derive import AMSTERDAM, amsterdam_date, match_location
+from ..geocode import GeocodeError, Geocoder
 from ..model import LegSource, LocationType
 from ..process import FLAG_MANUAL, reprocess
 from ..report.maandstaat import (
@@ -52,6 +54,7 @@ from ..report.maandstaat import (
 )
 from ..report.service import MissingConfig, maandstaat_from_store, rate_for
 from ..store import Store
+from ..version import VERSION
 from .auth import Auth, Session
 from .osm_map import TILE_ORIGIN, static_map
 
@@ -74,18 +77,15 @@ SECURITY_HEADERS = {
 
 ANSWER_LABELS = {
     Answer.DETOUR: "Omweg (alle km zakelijk)",
-    Answer.PRIVATE_STOP: "Privé-stop (standaardroute)",
+    Answer.PRIVATE_STOP: "Privé-stop (verwachte afstand)",
     Answer.BUSINESS: "Zakelijk",
     Answer.PRIVATE: "Privé",
-    Answer.CONFIRM: "Bevestig (zakelijk)",
+    Answer.CONFIRM: "Toch zakelijk",
 }
 QUESTION_TEXT = {
-    Question.DETOUR_OR_PRIVATE_STOP: (
-        "Langer dan elke bekende route: omweg door file of privé-stop?"
-    ),
-    Question.UNKNOWN_STOP: "Tussenstop op een onbekende plek: zakelijk of privé?",
-    Question.BUSINESS_OR_PRIVATE: "Rit zonder bekende zakelijke bestemming: zakelijk of privé?",
-    Question.WEEKEND: "Zakelijke rit in het weekend of op een feestdag: klopt dat?",
+    Question.DETOUR_OR_PRIVATE_STOP: "Langer dan verwacht: omweg door file of privé-stop?",
+    Question.BUSINESS_OR_PRIVATE: "Eerste rit hierheen, langer dan aannemelijk: zakelijk of privé?",
+    Question.WEEKEND: "Weekend of feestdag, telt als privé. Toch zakelijk?",
 }
 LOCATION_TYPES = {
     LocationType.HOME.value: "thuis",
@@ -105,7 +105,8 @@ OK_MESSAGES = {
     "rit": "Rit toegevoegd.",
     "verwijderd": "Verwijderd.",
     "stamdata": "Opgeslagen; de ritten van de afgelopen maand zijn opnieuw berekend.",
-    "stop": "Locatie opgeslagen en de rit opnieuw berekend.",
+    "plek": "Plek opgeslagen; de ritten vanaf vorige maand zijn opnieuw berekend.",
+    "gemaild": "De maandstaat wordt opnieuw gemaild.",
     "opgeslagen": "Opgeslagen.",
     "code": "Bevestig de koppeling op de BMW-pagina en kom dan hier terug.",
     "wacht": "BMW heeft de koppeling nog niet bevestigd. Rond het af op de BMW-pagina en "
@@ -238,6 +239,7 @@ def _environment() -> Environment:
         time=_local_time,
         daytime=lambda ts: f"{_day_label(amsterdam_date(ts))} {_local_time(ts)}" if ts else "?",
         osm=_osm,
+        explain=explain,
         km=lambda v: f"{int(v):,}".replace(",", ".") if v is not None else "",
     )
     env.globals.update(
@@ -246,6 +248,7 @@ def _environment() -> Environment:
         QUESTION_TEXT=QUESTION_TEXT,
         LOCATION_TYPES=LOCATION_TYPES,
         STATUS_TEXT=STATUS_TEXT,
+        version=VERSION,
     )
     return env
 
@@ -268,6 +271,8 @@ class WebApp:
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         cardata: Callable[[], CarDataClient] | None = None,
         quota_limit: int = 40,
+        geocoder: Geocoder | None = None,
+        resend_report: Callable[[int, int], None] | None = None,
         public_host: str | None = None,
     ) -> None:
         self.store = store
@@ -277,6 +282,8 @@ class WebApp:
         self.now = now
         self.cardata = cardata  # None: no Secrets Manager (local use), the Auto page says so
         self.quota_limit = quota_limit  # own daily CarData limit, as QUOTA_LIMIT of the poller
+        self.geocoder = geocoder  # None: address search is off, the manual form still works
+        self.resend_report = resend_report  # (year, month) -> mail the maandstaat again
         self.public_host = public_host  # own domain behind CloudFront (WEB_DOMAIN), else None
 
     def __call__(self, event: dict) -> dict:
@@ -331,6 +338,10 @@ class WebApp:
             return self.year(req, session, int(m.group(1)))
         if path == "/instellingen":
             return self.settings_page(req, session)
+        if path == "/instellingen/zoek":
+            return self.search_page(req, session)
+        if path == "/instellingen/nieuw":
+            return self.new_location_page(req, session)
         if path == "/stamdata":  # old name, kept for bookmarks
             return redirect("/instellingen")
         if path == "/auto":
@@ -349,12 +360,25 @@ class WebApp:
             case "/antwoord/herstel":
                 actions.undo_answer(store, v, f.get("segment", ""), now)
                 return redirect(_with_ok(back, "antwoord"))
-            case "/stop":
-                stop = (_float(f.get("lat")), _float(f.get("lon")))
-                actions.save_stop(
-                    store, v, f.get("segment", ""), stop, f.get("name", ""), f.get("type", ""), now
+            case "/plek":
+                actions.save_place(
+                    store,
+                    v,
+                    f.get("leg", ""),
+                    _date(f.get("date")),
+                    f.get("name", ""),
+                    f.get("type", ""),
+                    now,
                 )
-                return redirect(_with_ok(back, "stop"))
+                return redirect(_with_ok(back, "plek"))
+            case path if m := re.fullmatch(r"/maand/(\d{4})-(\d{2})/mail", path):
+                if self.resend_report is None:
+                    raise ActionError("Opnieuw mailen kan alleen in de AWS-omgeving.")
+                year, month = int(m.group(1)), int(m.group(2))
+                if store.sent_report(v, year, month) is None:
+                    raise ActionError("Deze maandstaat is nog niet gemaild.")
+                self.resend_report(year, month)
+                return redirect(_with_ok(f"/maand/{year:04d}-{month:02d}", "gemaild"))
             case "/correctie":
                 actions.correct(
                     store,
@@ -420,20 +444,6 @@ class WebApp:
             case "/instellingen/locatie/verwijder":
                 actions.delete_location(store, f.get("id", ""))
                 return self._places_changed(now)
-            case "/instellingen/route":
-                actions.save_route(
-                    store,
-                    location_a=f.get("from", ""),
-                    location_b=f.get("to", ""),
-                    name=f.get("name", ""),
-                    km=actions.parse_km(f.get("km", ""), allow_zero=False),
-                    is_default=f.get("default") == "1",
-                    id_=f.get("id") or None,
-                )
-                return self._places_changed(now)
-            case "/instellingen/route/verwijder":
-                actions.delete_route(store, f.get("id", ""))
-                return self._places_changed(now)
         return self.not_found(session)
 
     def _car_post(self, path: str, f: dict[str, str]) -> Response:
@@ -475,6 +485,9 @@ class WebApp:
         if req.path == "/login" and req.method == "GET":
             return self.page("login.html", None, next=safe_next(req.query.get("next")))
         if req.path == "/login" and req.method == "POST":
+            if not self.auth.is_login_email(req.form.get("email", "")):
+                # same page as for a sent link, but no mail and the hourly limit stays untouched
+                return self.page("login_sent.html", None)
             if not self.auth.may_send_login_mail(now):
                 return self.page(
                     "error.html", None, status=429, message="Te veel inloglinks; probeer later."
@@ -539,6 +552,12 @@ class WebApp:
         questions = self._recent_questions()
         names = self._names()
         car = self._car_now() if (year, month) == self._this_month() else None
+        sent = self.store.sent_report(self.vehicle, year, month)
+        changed = (
+            sent is not None
+            and m is not None
+            and (sent.business_km, sent.amount_cents) != (m.business_km, m.amount_cents)
+        )
         prev_m = date(year, month, 1) - timedelta(days=1)
         next_m = date(year, month, calendar.monthrange(year, month)[1]) + timedelta(days=1)
         return self.page(
@@ -552,6 +571,8 @@ class WebApp:
             questions=questions,
             open_count=len(questions),
             car=car,
+            sent=sent,
+            changed=changed,
             describe=lambda legs: describe(legs, names),
             per_trip=req.query.get("weergave") == "ritten",
             ok=OK_MESSAGES.get(req.query.get("ok", "")),
@@ -621,6 +642,7 @@ class WebApp:
             questions=questions,
             answered=answered,
             overrides=overrides,
+            WEEKEND=Question.WEEKEND.value,
             FLAG_MANUAL=FLAG_MANUAL,
             CARDATA=LegSource.CARDATA,
             MANUAL=LegSource.MANUAL,
@@ -676,9 +698,42 @@ class WebApp:
             settings=self.store.settings(),
             quota_limit=self.quota_limit,
             locations=locations,
-            routes=self.store.routes(),
+            search_enabled=self.geocoder is not None,
+            distances=actions.learned_distances(
+                self.store, self.vehicle, amsterdam_date(self.now())
+            ),
             names={loc.id: loc.name for loc in locations},
             ok=OK_MESSAGES.get(req.query.get("ok", "")),
+        )
+
+    def search_page(self, req: Request, session: Session) -> Response:
+        query = req.query.get("q", "").strip()
+        places, error = [], None
+        if self.geocoder is None:
+            error = "Zoeken is hier niet beschikbaar. Vul de locatie handmatig in."
+        elif query:
+            home = next((x for x in self.store.locations() if x.type is LocationType.HOME), None)
+            try:
+                places = self.geocoder.search(query, (home.lat, home.lon) if home else None)
+            except GeocodeError as e:
+                error = str(e)
+        return self.page("zoeken.html", session, q=query, places=places, error=error)
+
+    def new_location_page(self, req: Request, session: Session) -> Response:
+        try:
+            lat, lon = _float(req.query.get("lat")), _float(req.query.get("lon"))
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ActionError("Ongeldige coördinaten.")
+        except ActionError as e:
+            return self.page("error.html", session, status=400, message=str(e))
+        return self.page(
+            "locatie_nieuw.html",
+            session,
+            name=req.query.get("name", "")[:80],
+            lat=f"{lat:.6f}",
+            lon=f"{lon:.6f}",
+            latlon=(lat, lon),
+            map=static_map(lat, lon, width=480, height=240),
         )
 
     def xlsx(self, session: Session, year: int, month: int) -> Response:

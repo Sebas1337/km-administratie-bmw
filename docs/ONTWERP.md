@@ -40,10 +40,12 @@ auto de sensor is, vallen dagen waarop de auto niet rijdt vanzelf weg.
 - Elk uur leest een Lambda de kilometerstand en positie van de auto via de officiële BMW CarData API.
 - Opeenvolgende metingen met dezelfde stand zijn een **parkeer-episode**; tussen twee episodes ligt
   een **leg** met exacte kilometers (verschil in stand).
-- Legs worden gematcht aan bekende **locaties** (thuis, klant, …) en **routes** met hun afstand.
-  Past een rit bij een bekende route (±5 km), dan telt hij volledig zakelijk. Zo niet, dan is het
-  zakelijke deel de **standaardroute** en de rest privé (conservatief), met één knop om te
-  overrulen (bijv. omweg door file).
+- Legs worden gematcht aan bekende **locaties** (thuis, klant, …). Tussen twee zakelijke plekken
+  leert de app de **verwachte afstand** uit eerdere ritten (de meest voorkomende). Past een rit
+  daarbij (+15%), dan telt hij volledig zakelijk. Zo niet, dan is het zakelijke deel de verwachte
+  afstand en de rest privé (conservatief), met één knop om te overrulen (bijv. omweg door file).
+- Een rit naar een **onbekende plek**, en alles in het weekend, is privé zonder vraag. De maandmail
+  noemt die plekken; als klant opslaan maakt de rit alsnog zakelijk.
 - Dagelijks een mail met nieuwe vragen; op de 1e van de maand de maandstaat (.xlsx) per mail.
 - Een webinterface (inloggen met maillink) voor vragen, correcties, handmatige ritten en stamdata.
 
@@ -81,7 +83,7 @@ Randvoorwaarden
 | Agenda als bron | Klantdagen staan niet per se in de agenda. |
 | Rittenregistratie-apps (MileIQ, Driversnote, Everlance, TripLog) | Abonnement, locatiedata bij derde partij, vast aan hun export. |
 | OBD/GPS-dongle | Overkill; sluitende registratie is niet vereist voor een privé-auto met kilometervergoeding. |
-| Vaste afstanden per traject i.p.v. kilometerstand | Werkelijke km gewenst (omwegen door file). Vaste afstanden blijven wél de referentie voor route-matching en de conservatieve default. |
+| Vaste afstanden per traject i.p.v. kilometerstand | Werkelijke km gewenst (omwegen door file). De verwachte afstand, geleerd uit eerdere ritten (§7.2), is wél de referentie voor de marge en de conservatieve default. |
 | MQTT-stream van CarData (push, telt niet mee voor quotum) | Vereist een altijd-aan proces. Niet nodig bij uurpollen. |
 
 ## 5. Architectuur (AWS)
@@ -193,54 +195,73 @@ kortere stops in de kilometers van de leg zitten.
 
 ### 7.2 Classificatie
 
-Regels 3 en 4 gaan over een terugrit *met* stop, dus er wordt per **segment** geclassificeerd: een
-reeks legs tussen twee stops op een home/client/business-locatie, met nul of meer
-privé-/onbekende stops ertussen. Eén leg = regel 1/2; meer legs = regel 3/4; geen bekend zakelijk
-paar (of begin = eind) = regel 5. Een zakelijk paar zonder route in de stamdata telt 0 km tot
-bevestiging (vlag `no_route`).
+Er wordt per **segment** geclassificeerd: een reeks legs tussen twee stops op een
+thuis/klant/zakelijk-locatie (de *zakelijke plekken*), met nul of meer stops op andere plekken
+ertussen. Eén leg = regel 1/2; meer legs = regel 3; geen zakelijk paar (of begin = eind) = regel 5.
 
 Stamdata (TOML, zie `data/samples/stamdata.example.toml`, of via de webinterface):
 
 - `[vehicle]`: naam en kenteken voor de kop van de maandstaat. Het voertuig-id is `car`
   (instelbaar met `kmlog --vehicle` / Terraform `vehicle_id`).
 - `Location` (type `home` | `client` | `business` | `private`).
-- `Route` per paar locaties met `distance_km`, naam (bijv. "A4", "via Amsterdam") en één
-  `is_default` (de standaardroute). Tolerantie `route_tolerance_km` = 5.
-- `Rate` per jaar in centen per km.
+- `Rate` per jaar in centen per km. Een jaar zonder tarief gebruikt het laatste eerdere; is er geen
+  enkel tarief, dan geldt vanaf 2026 25 cent (de onbelaste maximumvergoeding van 2026).
+
+Routes worden niet meer ingevuld (sinds v0.3.0): de app leert de afstanden uit de ritten.
+
+**Verwachte afstand** `E(a, b)` tussen twee zakelijke plekken = de **meest voorkomende** afstand
+(hele km) van de laatste 10 eerdere directe ritten (één leg) tussen a en b die aannemelijk waren
+(zie hieronder), in beide richtingen. Bij gelijke stand de laagste. "Eerder" = vertrokken vóór de rit die beoordeeld wordt, zodat een nieuwe
+rit oude ritten niet verschuift. Handmatige ritten tellen niet mee (die hebben geen locaties).
+**Marge** = 15% van `E`, minimaal 2 km. Een rit **past** als `km ≤ E + marge`; korter mag altijd
+(er worden nooit meer km geteld dan gereden).
+
+**Aannemelijk** = tussen 1× en 2× de afstand hemelsbreed tussen de twee locaties, met 2 km
+speling voor de afronding van de teller (`hemelsbreed − 2 ≤ km ≤ 2 × hemelsbreed + 2`). Dat
+beoordeelt de **eerste rit** tussen twee plekken (nog geen `E`), en houdt een rare rit (privé-omweg,
+datafout) buiten de geschiedenis waar `E` uit volgt.
 
 Regels, in volgorde:
 
 | # | Situatie | Uitkomst |
 |---|---|---|
-| 1 | Beide eindpunten bekend, `distance_km` binnen ±tolerantie van een `Route` voor dat paar | **Zakelijk**, volledige km, routelabel. Geen vraag. (Dekt omwegen door file en korte onzichtbare privéstops.) |
-| 2 | Beide eindpunten bekend (home/client/business), geen route past | Zakelijk = **standaardroute-km**, rest privé. Status `needs_confirmation` met twee knoppen: *Omweg (zakelijk, alle km)* / *Privé-stop (standaard)*. Niet beantwoord na `confirm_timeout_days` (default 7) → standaard blijft staan. |
-| 3 | Eén eindpunt is een `private`-locatie (zichtbare stop ≥ 1 uur op bekende privéplek) | Leg zelf privé. Het traject klant→privé→thuis wordt als één retour behandeld: zakelijk = standaardroute klant→thuis, de rest privé. Geen vraag. |
-| 4 | Eén eindpunt onbekend (zichtbare stop ≥ 1 uur op onbekende plek) | Vraag: *Zakelijk* (leg volledig zakelijk; aanbieden om de plek als `business`-locatie op te slaan) / *Privé* (zoals regel 3; aanbieden als `private` op te slaan). Default bij geen antwoord: privé. |
-| 5 | Beide eindpunten onbekend, of van/naar home zonder bekende bestemming | Privé tenzij bevestigd zakelijk. Vraag alleen op werkdagen en bij ≥ 20 km. |
-| 6 | Auto in klantzone op weekend of feestdag | Volgens regel 1–2, met vraag *Bevestig* / *Privé* (vlag `weekend_or_holiday`). |
+| 1 | Eén leg tussen twee verschillende zakelijke plekken die past bij `E`, of een eerste rit die aannemelijk is | **Zakelijk**, alle km. Geen vraag. (Dekt omwegen door file en korte onzichtbare stops.) |
+| 2 | Eén leg tussen twee zakelijke plekken die langer is dan `E + marge` | Zakelijk = `E`, rest privé. Vraag: *Omweg (alle km zakelijk)* / *Privé-stop (verwachte afstand)*. Eerste rit die niet aannemelijk is: vraag *Zakelijk* / *Privé*, 0 km tot bevestiging. Geen antwoord na 7 dagen → de default blijft. |
+| 3 | Tussenstop(s) op een privé- of onbekende plek tussen twee zakelijke plekken (klant → stop → thuis) | Zakelijk = `E` van begin naar eind (zonder `E`: de afstand hemelsbreed, naar beneden afgerond), rest privé. Geen vraag. |
+| 4 | *(vervallen in v0.3.0: een onbekende tussenstop valt onder regel 3)* | |
+| 5 | Geen zakelijk paar: van/naar een onbekende of privéplek, of begin = eind (thuis → … → thuis) | **Privé**, geen vraag. De plek staat in het overzicht *Onbekende plekken* (§9); als klant/zakelijk opslaan maakt de rit alsnog zakelijk. |
+| 6 | Weekend of feestdag, ook bij een klant of zakelijke plek | **Privé**, geen vraag. Op de dagpagina staat bij ritten met een klant/zakelijke plek de knop *Toch zakelijk*: dan geldt regel 1–3 alsof het een werkdag is. Deze ritten staan als vangnet in de maandmail. |
 | 7 | Dag met gereden km maar zonder enkele zakelijke leg, op een werkdag | Informatieve melding "gemist?" (geen vergoeding zonder bevestiging). Alleen per mail als dat in Instellingen aanstaat (standaard uit). |
 | 8 | Kilometerstand-delta van een dag wijkt > 20% af van de som van de legs | Datakwaliteitsvlag (gemiste poll); handmatige controle. |
+
+Elke rit krijgt een korte **uitleg** van de regel die gold (dagpagina en Excel-tabblad "Ritten"),
+bijvoorbeeld "Zakelijk: 70 km, verwacht 69 ± 10", "Privé: geen klant of zakelijke plek",
+"Privé: tussenstop, zakelijk telt 69 km", "Privé: zaterdag".
 
 Dagen zonder autorit: de auto beweegt niet → geen episodes, geen legs, niets te doen.
 
 ### 7.3 Voorbeelddagen (testfixtures)
 
-Stamdata voor de voorbeelden (verzonnen): `home`, `client`. Routes home↔client: A4 **70** km
-(default), via Amsterdam **84** km, N11 **77** km. Tolerantie 5 km.
+Stamdata voor de voorbeelden (verzonnen): `home`, `client` (hemelsbreed 50 km van thuis),
+`client2` (hemelsbreed 30 km, nog nooit bezocht). Eerdere ritten thuis ↔ klant: 70, 69, 70, 84,
+71, 70 → `E` = **70**, marge 10,5 → past t/m **80** km. Dagen zijn werkdagen, tenzij anders vermeld.
 
 | Dag | Legs (km) | Verwerking | Zakelijk |
 |---|---|---|---|
-| A. Normaal | home→client 71; client→home 70 | beide match A4 | **141** |
-| B. Omweg door file | 71; client→home 85 | 85 match "via Amsterdam" (84) | **156**, geen vraag |
-| C. Lange privé-omweg, stop zichtbaar | 71; client→onbekend 38 (stop 17:40–21:10); onbekend→home 51 | regel 4, antwoord *Privé* → retour = standaard 70 | **141** (van 160 gereden) |
-| C'. Zelfde dag, antwoord *Zakelijk* | idem | legs volledig zakelijk, plek opslaan als `business` | **160** |
-| D. Korte onzichtbare stop | 71; client→home 73 | 73 binnen 70±5 | **144** |
+| A. Normaal | home→client 71; client→home 70 | beide passen (regel 1) | **141** |
+| B. Omweg door file | 71; client→home 85 | 85 > 80 → regel 2, vraag; default `E` | **141** (156 na *Omweg*) |
+| C. Lange privé-omweg, stop zichtbaar | 71; client→onbekend 38 (stop 17:40–21:10); onbekend→home 51 | regel 3: zakelijk = `E` 70, geen vraag | **141** (van 160 gereden) |
+| C'. Zelfde dag, plek opgeslagen als klant | idem; plek hemelsbreed 30 km van client en 40 km van home | twee eerste ritten, beide aannemelijk (regel 1) | **160** |
+| D. Korte onzichtbare stop | 71; client→home 73 | 73 past | **144** |
 | E. Dag zonder auto | geen kilometerstandwijziging | niets | **0** |
 | F. Nachtdienst | home→client 2 jul 20:10 (70); client→home 3 jul 08:30 (70) | één dag, 2 jul | **140** op 2 jul |
-| G. Onbekende omweg zonder zichtbare stop | 71; client→home 96 | geen route (dichtstbij 84, +12) → regel 2, vraag; default standaard | **141** (of 167 na *Omweg*) |
-| H. Weekend bij klant | zaterdag 70; 70 | regel 1 + vraag weekend | **140**, ter bevestiging |
-| I. Privé-dag | home→onbekend 23; onbekend→home 23 | regel 5, default privé; vraag (werkdag, ≥20 km) | **0** tenzij bevestigd |
+| G. Onbekende omweg zonder zichtbare stop | 71; client→home 96 | regel 2, vraag; default `E` | **141** (of 167 na *Omweg*) |
+| H. Weekend bij klant | zaterdag 70; 70 | regel 6: privé, geen vraag; in de maandmail | **0** (140 na *Toch zakelijk*) |
+| I. Privé-dag | home→onbekend 23; onbekend→home 23 | regel 5: privé, geen vraag; in *Onbekende plekken* | **0** |
 | J. Gemiste poll | episodes ontbreken, dagdelta 141 maar legs 0 | regel 8, vlag | handmatig |
+| K. Eerste rit naar nieuwe klant | home→client2 41; client2→home 40 | 41 aannemelijk (28–62); daarna `E` = 41, 40 past | **81** |
+| L. Eerste rit, niet aannemelijk | home→client2 75; client2→home 31 | 75 > 62 → regel 2, vraag *Zakelijk*/*Privé*, 0 km; 75 telt niet mee voor `E`, dus 31 is weer een eerste rit: aannemelijk | **31** (106 na *Zakelijk*) |
+| M. Tussenstop zonder geschiedenis | home→onbekend 20 (stop 1 uur); onbekend→client2 25 | regel 3 zonder `E`: zakelijk = hemelsbreed 30 | **30** (van 45) |
 
 ## 8. Datamodel
 
@@ -252,16 +273,21 @@ een eigen partitie). Lokaal dezelfde records als JSON in SQLite.
 - **Rate**: `year`, `cents_per_km`.
 - **Location**: `id`, `name`, `type` (`home`|`client`|`business`|`private`), `lat`, `lon`,
   `radius_m` (200), `active_from/to`.
-- **Route**: `id`, `location_a`, `location_b` (ongeordend paar), `name`, `distance_km`, `is_default`.
+- **Route**: `id`, `location_a`, `location_b`, `name`, `distance_km`, `is_default`. Niet meer gebruikt
+  sinds v0.3.0 (§7.2: afstanden worden geleerd); bestaande records blijven staan zodat terugzetten
+  naar v0.2.x werkt.
 - **Observation**: `vehicle`, `polled_at`, `odometer_km`, `odometer_ts`, `lat`, `lon`, `loc_ts`, `raw`.
 - **ParkingEpisode**: `vehicle`, `odometer_km`, `lat`, `lon`, `location_id?`, `first_seen`, `last_seen`.
 - **Leg**: `id`, `vehicle`, `date` (Amsterdam, vertrekdag), `from_location?`, `to_location?`,
-  `from_latlon`, `to_latlon`, `departed_after`, `arrived_at`, `distance_km`, `matched_route?`,
+  `from_latlon`, `to_latlon`, `departed_after`, `arrived_at`, `distance_km`, `matched_route?` (oud),
+  `expected_km?` (de `E` die gold), `reason` (code + waarden voor de uitleg, §7.2),
   `business_km`, `private_km`, `classification` (`business`|`private`|`mixed`),
   `status` (`auto`|`needs_confirmation`|`confirmed`|`timed_out`), `flags[]`, `note`,
   `source` (`cardata`|`manual`), `odometer_from/to`, `waypoints[]`. Ritten uit oudere databases
   met een spreadsheet-bron worden als `manual` ingelezen.
 - **DayNote**: `vehicle`, `date`, `text`.
+- **SentReport**: `year`, `month`, `sent_at`, `business_km`, `amount_cents`: wat er in de maandmail
+  stond, om "gewijzigd na verzending" te kunnen tonen (§9).
 - **Antwoorden en correcties**: eigen records per segment resp. leg (§9).
 - **QuotaCounter**: per UTC-dag, `used`.
 - **Secrets** (Secrets Manager, niet in DynamoDB): `client_id`, tokens, `vin`, container id.
@@ -272,9 +298,27 @@ Tijd: opgeslagen in UTC, getoond in `Europe/Amsterdam`.
 ## 9. Uitvoer en bevestigingsflow
 
 **Maandstaat** (.xlsx): voertuig, maand, tarief; per dag: datum, omschrijving (bijv.
-"Thuis → Klant → Thuis"), route(s), gereden/zakelijke/privé km, opmerking/vlag; totaal km, bedrag;
+"Thuis → Klant → Thuis"), gereden/zakelijke/privé km, opmerking/vlag; totaal km, bedrag;
 kilometerstand begin en einde maand; lijst van openstaande bevestigingen (die tellen conservatief
-mee). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
+mee). Dagen en ritten die alleen privé zijn (geen zakelijke km, geen open vraag) staan niet in de
+Excel (de declaratie voor de BV); de maandpagina toont ze wel, als ingang naar de dagpagina. Een
+dag met een zakelijke rit telt al zijn km (ook een privéritje die dag). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
+
+**Maandmail**: bedrag, jaartotaal, openstaande bevestigingen, en twee lijsten om gemiste zakelijke
+ritten te vinden (elk met een link naar de dagpagina, geen coördinaten in de mail):
+
+- *Onbekende plekken (geteld als privé)*: bezoeken op werkdagen aan een plek die geen locatie is,
+  met minstens 10 km voor het segment (heen en terug). Bezoeken binnen 200 m van elkaar staan op één
+  regel. Eenmalige privéplekken hoef je niets mee te doen: ze tellen al als privé en staan alleen in
+  de mail van die maand. Een vaste privéplek als `private` opslaan haalt hem uit de lijst.
+- *Weekendritten naar klanten (geteld als privé)*: per klant/zakelijke plek het aantal ritten op
+  weekend- en feestdagen (regel 6).
+
+Dezelfde twee lijsten staan op de maandpagina.
+
+Wat er gemaild is, wordt bewaard (`SentReport`). Wijkt de maandstaat later af (bijv. na het opslaan
+van een plek als klant), dan toont de maandpagina "gewijzigd na verzending" met de knop
+*Opnieuw mailen* (zelfde mail, "gecorrigeerd" in het onderwerp).
 
 **Ritten**: dezelfde legs één per regel, om in te zien — de declaratie blijft per dag. Per rit:
 datum, "vertrokken na" (laatste poll waarin de auto nog stond; het echte vertrek ligt daartussen) en
@@ -297,9 +341,13 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   Excel-download, openstaande vragen met één-tik-knoppen, laatste positie van de auto), dag (legs met
   tijden en een kaartje van de aankomstplek, zakelijke km corrigeren met notitie, handmatige rit
   toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, instellingen (auto, vergoeding per
-  jaar, uitleesvenster, meldingen, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
-- **Inloggen**: één gebruiker, geen wachtwoord. Knop "stuur inloglink" → mail naar het vaste adres
-  (geen invoerveld) met een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
+  jaar, uitleesvenster, meldingen, locaties en de geleerde afstanden (alleen lezen)), auto
+  (koppelen/ontkoppelen, zie §6). Dagpagina: per rit de uitleg (§7.2), bij elke onbekende
+  aankomstplek *Opslaan als klant / zakelijk / privé* en in het weekend *Toch zakelijk*.
+  Een locatie voeg je toe met coördinaten of via zoeken op adres/bedrijf (zie hieronder).
+- **Inloggen**: één gebruiker, geen wachtwoord. E-mailadres invullen + "stuur inloglink" → alleen
+  bij het vaste adres (`report_email`) een mail; elk ander adres krijgt dezelfde pagina "check je
+  mail", geen mail, en telt niet mee voor de limiet. De mail bevat een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
   max. 5 mails per uur). De link opent een pagina met een knop; pas die POST verbruikt het token
   (mailscanners die links voorladen kunnen het dus niet opmaken). Daarna een HMAC-ondertekende
   sessiecookie (30 dagen, HttpOnly, Secure, SameSite=Lax), CSRF-token op elk formulier plus
@@ -308,8 +356,19 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   en correcties (per leg) staan in eigen records; elke herberekening past ze opnieuw toe. Een
   antwoord dat niet meer bij de vraag past (bijv. omdat een stop inmiddels een bekende locatie is)
   wordt genegeerd en kan dus nooit méér km opleveren.
-- **Onbekende stop opslaan**: als zakelijke locatie → routes naar/van die plek worden aangemaakt met
-  de werkelijk gereden km (de rit telt volledig, volgende keer zonder vraag); als privé → regel 3.
+- **Plek opslaan**: elke onbekende aankomstplek op de dagpagina, met een zelf gekozen naam (er wordt
+  niets opgezocht). Daarna worden de ritten vanaf de 1e van de vorige maand opnieuw berekend, zodat
+  ook een plek uit de maandmail meetelt. Als klant/zakelijk: de ritten erheen zijn eerste ritten
+  (regel 1 als aannemelijk) en vormen daarna de verwachte afstand. Als privé: alleen uit de lijst.
+- **Toch zakelijk** (weekend/feestdag, regel 6): een antwoord op het segment, net als een vraag;
+  intrekken kan op dezelfde manier.
+- **Locatie zoeken**: `/instellingen/zoek?q=` laat de Lambda Nominatim (OpenStreetMap) bevragen en
+  toont maximaal vijf resultaten met adres; "Kies deze" opent `/instellingen/nieuw` met naam en
+  coördinaten voorgevuld en een kaartje, en opslaan gaat via dezelfde POST als een handmatige
+  locatie. Alleen op een expliciete zoekopdracht (de gebruiksregels van Nominatim verbieden
+  autocomplete), met een limiet van 1 verzoek/s (teller in de store), een cache in het geheugen van
+  de Lambda, voorkeur voor resultaten rond thuis (`viewbox`, niet beperkend) en zonder
+  bushaltes/straten (`category=highway`). Bij een storing blijft het handmatige formulier.
 - **Handmatige rit**: via de dagpagina, voor als de auto geen data gaf.
 - **Stamdata**: na bewerken in de webinterface is de database de bron. `kmlog stamdata --export`
   schrijft de database naar TOML; `kmlog stamdata` (import) weigert een afwijkende database te
@@ -332,7 +391,10 @@ Gezien met een BMW i4 via REST:
   leeg (lege `value` én `timestamp`), ook midden in een rit. Ze worden daarom niet opgevraagd.
 - Inpluggen van de laadkabel geeft een verse melding (zelfde stand).
 - Een korte stop (bijv. 40 minuten) is onzichtbaar als de auto binnen hetzelfde uur weer rijdt; de
-  km zitten dan in de leg en vallen meestal binnen de routemarge (regel 1) of geven een vraag (regel 2).
+  km zitten dan in de leg en vallen meestal binnen de marge (regel 1) of geven een vraag (regel 2).
+- Een stop op een **bekende** plek is altijd een stop. Een kort privébezoek aan een klantlocatie op
+  een werkdag (bijv. een winkelcentrum waar de klant zit) telt daardoor als zakelijk; corrigeer zo'n
+  rit op de dagpagina, of zet de locatie met een kleine straal op de ingang van het kantoor.
 - Door het uurpollen is een leg niet altijd één echte rit (bijv. boodschap + vertrek = 3 km
   thuis → thuis); daarom "vertrokken na" in plaats van een vertrektijd.
 
@@ -373,6 +435,7 @@ tijdstempels.
 | 2026-10-14 | Optioneel eigen domein via CloudFront; webapp vertrouwt `X-Forwarded-Host` alleen als hij gelijk is aan `WEB_DOMAIN` | Een Function URL kan geen eigen hostnaam krijgen en CloudFront kan de viewer-Host er niet naartoe sturen. Blind vertrouwen zou de maillink (host-header-injectie) laten wijzen naar een andere site. Aanvulling op de beslissing van 2026-10-10: zonder `web_domain` blijft het een kale Function URL. |
 | 2026-10-12 | Straal thuis ruim genoeg kiezen (bijv. 300 m) | Een meting bij vertrek kan net buiten 200 m liggen; dan wordt een privérit bij het woon-werkverkeer opgeteld. |
 | 2026-10-12 | Geen CarData Stream (MQTT) | Vraagt een altijd-open verbinding (enkele dollars per maand vs < $1 nu, één verbinding per account, tokens delen) voor weinig winst in de declaratie. |
+| 2026-10-14 | Locaties zoeken op adres of bedrijf via de publieke Nominatim, alleen OpenStreetMap, zonder waarschuwing of blokkade in de webinterface | Typen van coördinaten is de grootste drempel bij het instellen. Nominatim vindt bedrijven en adressen goed, maar postcode + huisnummer slecht; PDOK (alleen adressen) is daarom bewust niet toegevoegd. De zoekterm gaat naar OSMF; dat staat in de README en infra/README, en zoeken is uit te zetten met `geocoder_url = "off"`. Een radius-suggestie uit de bounding box is weggelaten: voor bedrijven is die ~10 m. |
 | 2026-10-12 | Ritten-overzicht naast de maandstaat (web-schakelaar + Excel-tabblad), declaratie blijft per dag | Per rit inzien is handig; de dagregels zijn wat de BV betaalt. Een leg is door het uurpollen niet altijd één echte rit; daarom "vertrokken na". |
 | 2026-10-13 | `isMoving` en contact niet in de container; doorrijpunt alleen op tijd | Een hele rit lang leeg, ook tijdens het rijden; de i4 levert ze niet via REST. |
 | 2026-10-13 | `Referrer-Policy: same-origin` (header, geen `<meta name="referrer">`) | Met `no-referrer` sturen browsers `Origin: null` bij elk formulier; de herkomstcontrole weigerde daardoor álle acties na het inloggen. |
@@ -384,6 +447,16 @@ tijdstempels.
 | 2026-10-13 | Uitleesvenster instelbaar in de webinterface (standaard 06–23); de scheduler roept de poller elk uur aan en die slaat uren buiten het venster over vóór elke BMW-call | Wie 's nachts rijdt, wil ook dan metingen; 24 polls per dag passen in het quotum (50, eigen grens 40). Zonder deploy aan te passen; een overgeslagen uur kost alleen een Lambda-aanroep. De webinterface weigert een venster dat niet past. |
 | 2026-10-13 | Pagina "Stamdata" heet "Instellingen" (`/instellingen`, `/stamdata` stuurt door) | Er staan nu ook auto, tarief en uitleesvenster op; "stamdata" blijft de term voor locaties, routes en het TOML-bestand. |
 | 2026-10-13 | "gemist?"-mail (regel 7) uitzetbaar in Instellingen, standaard uit | Elke privérit op een werkdag gaf een mail zonder iets te beantwoorden (ook onder de 20 km van regel 5); de mail moet alleen komen als er iets te doen is. |
+| 2026-10-21 | Versies: git-tag `vX.Y.Z` = code + infra, GitHub Release met `lambda.zip`, `scripts/deploy.sh` installeert of zet terug | Bijwerken en terugzetten naar een bekende versie moet één commando zijn, met exact het geteste bestand. Geen aparte testomgeving: de auto is maar door één installatie uit te lezen (tokens roteren, quotum 50/dag). |
+| 2026-10-21 | Opgeslagen gegevens alleen uitbreiden (geen velden hernoemen of verwijderen, geen nieuwe enum-waarden zonder vermelding) | Terugzetten moet de gegevens van een nieuwere versie kunnen lezen. Ritten worden elk uur opnieuw berekend, dus alleen antwoorden, correcties en stamdata blijven staan. |
+| 2026-10-21 | Inlogpagina vraagt het e-mailadres; alleen `report_email` krijgt een link en alleen die telt mee voor de limiet | Een eigen domein staat in de certificate-transparency-logs; bots vonden de site en vroegen inloglinks aan. Met één knop kon iedereen de eigenaar mailen en met 5 aanvragen per uur buitensluiten. |
+| 2026-10-21 | Verwachte afstand geleerd uit eerdere ritten (meest voorkomende van de laatste 10 aannemelijke, bij gelijke stand de laagste), marge 15% (min. 2 km); routes niet meer invullen | Routes invullen was onduidelijk ("standaard") en dubbel werk: de ritten zelf laten zien wat normaal is. Een alternatieve route die > 15% langer is, geeft een omwegvraag tot hij de meest voorkomende wordt. |
+| 2026-10-21 | Eerste rit tussen twee plekken telt als hij aannemelijk is (1×–2× hemelsbreed); niet-aannemelijke ritten tellen niet mee voor de verwachte afstand | Een nieuwe klant moet zonder instellen tellen; een privé-omweg of datafout mag geen referentie worden. |
+| 2026-10-21 | Onbekende plek = privé zonder vraag, ook op werkdagen (regel 4 vervalt, regel 5 zonder vraag); overzicht in de maandmail; elke plek achteraf opslaan als klant/zakelijk/privé | Vragen over privéritten zijn ruis. Een gemiste zakelijke rit vang je op via de maandmail; eenmalige privéplekken hoeven niet opgeslagen te worden. |
+| 2026-10-21 | Weekend en feestdag altijd privé zonder vraag, ook bij een klant; knop *Toch zakelijk*; vangnet in de maandmail | Voorheen telde een weekendrit naar een klant zakelijk tot je *Privé* zei; een klant in een winkelcentrum gaf elk weekend een vraag en bij een gemiste vraag een onterechte declaratie. |
+| 2026-10-21 | Maandstaat die na verzending wijzigt: melding op de maandpagina + *Opnieuw mailen* | Een plek uit de maandmail opslaan verandert de vorige maand; de BV moet de gecorrigeerde staat krijgen. |
+| 2026-10-21 | Privédagen en -ritten niet in de Excel; de maandpagina en de lijsten in de maandmail tonen ze wel | De Excel is de declaratie voor de BV: alleen wat gedeclareerd wordt of nog open staat. Op de maandpagina zijn ze de ingang naar de dagpagina (plek opslaan, corrigeren). |
+| 2026-10-21 | Zonder ingesteld tarief vanaf 2026 € 0,25 per km | Een nieuwe installatie maakt meteen een maandstaat; € 0,25 is de onbelaste maximumvergoeding van 2026. |
 
 ## 12. Bronnen
 

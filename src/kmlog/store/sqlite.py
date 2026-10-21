@@ -9,7 +9,18 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from ..model import DayNote, Leg, LegSource, Location, Observation, Rate, Route, Settings, Vehicle
+from ..model import (
+    DayNote,
+    Leg,
+    LegSource,
+    Location,
+    Observation,
+    Rate,
+    Route,
+    SentReport,
+    Settings,
+    Vehicle,
+)
 from .codec import dumps, loads
 
 SCHEMA = """
@@ -239,6 +250,21 @@ class SqliteStore:
             "SELECT key, data FROM meta WHERE kind = ? AND vehicle = ?", (kind, vehicle)
         ).fetchall()
         return {key: json.loads(data) for key, data in rows}
+
+    def put_sent_report(self, vehicle: str, report: SentReport) -> None:
+        data = {
+            "sent_at": _utc(report.sent_at),
+            "business_km": report.business_km,
+            "amount_cents": report.amount_cents,
+        }
+        self._put_meta("report", vehicle, f"{report.year:04d}-{report.month:02d}", data)
+
+    def sent_report(self, vehicle: str, year: int, month: int) -> SentReport | None:
+        data = self._meta("report", vehicle).get(f"{year:04d}-{month:02d}")
+        if data is None:
+            return None
+        sent_at = datetime.fromisoformat(data["sent_at"])
+        return SentReport(year, month, sent_at, data["business_km"], data["amount_cents"])
 
     def put_answer(self, vehicle: str, segment_id: str, answer: str, at: datetime) -> None:
         self._put_meta("answer", vehicle, segment_id, {"answer": answer, "at": _utc(at)})

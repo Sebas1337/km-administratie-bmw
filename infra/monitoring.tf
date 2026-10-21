@@ -31,7 +31,7 @@ resource "aws_cloudwatch_metric_alarm" "report_errors" {
   alarm_description   = "kmlog-report failed: no maandstaat this month."
   namespace           = "AWS/Lambda"
   metric_name         = "Errors"
-  dimensions          = { FunctionName = aws_lambda_function.fn["report"].function_name }
+  dimensions          = { FunctionName = aws_lambda_function.report.function_name }
   statistic           = "Sum"
   period              = 3600
   evaluation_periods  = 1

@@ -1,4 +1,6 @@
-"""Stamdata (vehicle, locations, routes, rates) from a TOML file. See docs/ONTWERP.md §7.2.
+"""Stamdata (vehicle, locations, rates) from a TOML file. See docs/ONTWERP.md §7.2.
+
+Routes (`[[route]]`) are still read and stored for older files, but no longer used since v0.3.0.
 
 The real file is data/stamdata.toml (gitignored: it holds home and client coordinates);
 data/samples/stamdata.example.toml shows the format.

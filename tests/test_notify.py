@@ -55,10 +55,10 @@ def test_missed_business_day_and_nothing_to_report():
     assert not notify.run(store, "car", EVENING, send, None)["mailed"]
 
     store.put_settings(Settings(mail_missed_days=True))
-    day = date(2026, 10, 6)  # tuesday: private day of 46 km -> question (rule 5) + rule 7
+    day = date(2026, 10, 6)  # tuesday: private day of 46 km -> no question (rule 5), rule 7
     store.put_observations(observations(day, private_day(day)))
     result = notify.run(store, "car", EVENING, send, None)
-    assert (result["questions"], result["missed_days"]) == (1, 1)
+    assert (result["questions"], result["missed_days"]) == (0, 1)
     assert "gemist?" in mails[0][1] and "di 06-10" in mails[0][1]
     assert not notify.run(store, "car", EVENING, send, None)["mailed"]
 

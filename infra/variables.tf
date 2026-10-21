@@ -67,6 +67,27 @@ variable "dkim_private_key_file" {
   default     = null
 }
 
+variable "geocoder_url" {
+  description = <<-EOT
+    Nominatim server for the address/company search on the Instellingen page. The public OSM server
+    allows light, user-triggered use (infra/README.md "Adres zoeken"). "off" disables the search.
+  EOT
+  type        = string
+  default     = "https://nominatim.openstreetmap.org"
+}
+
+variable "geocoder_countries" {
+  description = "Comma-separated ISO country codes the address search is limited to."
+  type        = string
+  default     = "nl"
+}
+
+variable "geocoder_contact" {
+  description = "Contact URL in the User-Agent of search requests (OSM usage policy). Unset = this project's repository."
+  type        = string
+  default     = null
+}
+
 variable "web_domain" {
   description = "Custom domain for the web UI (e.g. kmlog.example.com). Needs the ACM + CloudFront rights from infra/iam/deployer-policy.json; see infra/README.md (Eigen domein)."
   type        = string

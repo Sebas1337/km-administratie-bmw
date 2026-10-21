@@ -15,6 +15,8 @@ import json
 import logging
 import os
 
+from ..version import VERSION
+
 log = logging.getLogger("kmlog")
 log.setLevel(logging.INFO)
 
@@ -28,7 +30,7 @@ def env(name: str, default: str | None = None) -> str:
 
 def log_event(**fields) -> None:
     """One structured JSON line per event (CloudWatch Logs Insights friendly)."""
-    print(json.dumps(fields, default=str, sort_keys=True))
+    print(json.dumps({"version": VERSION, **fields}, default=str, sort_keys=True))
 
 
 SUBJECT_PREFIX = "KM Admin"  # fixed prefix so a mail rule can filter every kmlog mail

@@ -9,18 +9,27 @@ from kmlog import cardata
 from kmlog.aws import poller, report
 from kmlog.model import LegSource
 from kmlog.process import rederive
+from kmlog.report.maandstaat import build_maandstaat
 from kmlog.store.dynamodb import DynamoDbStore
 from kmlog.store.sqlite import SqliteStore
 from test_cardata import NOW, TELEMATIC, FakeSession, MemoryStore, Resp
 from test_maandstaat import CAR, RATE, manual
-from test_voorbeelddagen import LOCATIONS, ROUTES, WORKDAY, normal_day, observations
+from test_voorbeelddagen import (
+    HISTORY,
+    LOCATIONS,
+    WORKDAY,
+    _private_day,
+    normal_day,
+    observations,
+    run,
+)
 
 
 def seeded(store):
     for loc in LOCATIONS:
         store.put_location(loc)
-    for r in ROUTES:
-        store.put_route(r)
+    days = [leg.date for leg in HISTORY]  # earlier trips: expected distance home-client 70 km
+    store.replace_legs("car", LegSource.CARDATA, min(days), max(days), HISTORY)
     store.put_vehicle(CAR)
     store.put_rate(RATE)
     return store
@@ -169,12 +178,35 @@ def test_report_handler_uploads_and_mails(aws, dynamodb_table, monkeypatch):
     msg = email.message_from_string(sent[-1].raw_data)
     names = [p.get_filename() for p in msg.get_payload()[1:]]
     assert names == ["2026-09.xlsx", "jaaroverzicht-2026.xlsx"]
+    assert store.sent_report("car", 2026, 9).business_km == 228
+
+    monkeypatch.setenv("WEB_URL", "https://km.example/")
+    report.handler({"year": 2026, "month": 9, "corrected": True}, None, store=store)
+    msg = email.message_from_string(sent[-1].raw_data)
+    assert msg["Subject"] == "KM Admin - Maandstaat september 2026 (gecorrigeerd)"
 
     store.replace_legs(
         "car", LegSource.MANUAL, date(2026, 12, 1), date(2026, 12, 31),
         [manual(date(2026, 12, 3), 140)],
     )  # fmt: skip
     assert report.handler({"year": 2026, "month": 12}, None, store=store)["jaaroverzicht_attached"]
+
+
+def test_mail_body_lists_unknown_places_and_weekend_trips():
+    private, _ = _private_day(WORKDAY)
+    weekend, _ = run(date(2026, 10, 10), normal_day(70, out_km=70))
+    m = build_maandstaat(2026, 10, CAR, RATE, [*private, *weekend], locations=LOCATIONS)
+    body = report.mail_body(m, [m], "https://km.example/")
+    assert (
+        "Onbekende plekken in oktober (geteld als privé):\n- wo 07-10: 46 km heen en terug" in body
+    )
+    assert "(aankomst 10:40, vertrek na 14:00)\n  https://km.example/dag/2026-10-07\n" in body
+    assert "Eenmalige privéplekken kun je negeren." in body
+    assert "Weekendritten naar klanten (geteld als privé):\n- Klant: za 10-10\n" in body
+    assert "https://km.example/dag/2026-10-10" in body
+    quiet, _ = run(WORKDAY, normal_day(70))
+    m = build_maandstaat(2026, 10, CAR, RATE, quiet, locations=LOCATIONS)
+    assert "Onbekende" not in report.mail_body(m, [m], None)
 
 
 def test_previous_month():

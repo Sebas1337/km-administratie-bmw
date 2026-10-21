@@ -10,7 +10,7 @@ from kmlog.store.sqlite import SqliteStore
 from kmlog.web.app import WebApp
 from kmlog.web.auth import Auth
 from test_cardata import NOW, FakeSession, MemoryStore, Resp
-from test_web import EVENING, KEY, csrf, event, login
+from test_web import EMAIL, EVENING, KEY, csrf, event, login
 
 env = test_web.env  # fixture
 
@@ -113,7 +113,7 @@ def test_auto_page_link_flow(monkeypatch):
     session = FakeSession(routes)
     monkeypatch.setattr(cardata.time, "time", lambda: NOW)
     app = WebApp(
-        store, Auth(KEY, store), "car", lambda s, b: mails.append((s, b)),
+        store, Auth(KEY, store, EMAIL), "car", lambda s, b: mails.append((s, b)),
         now=lambda: EVENING,
         cardata=lambda: CarDataClient(
             tokens, session=session, clock=lambda: NOW,
@@ -203,6 +203,25 @@ def test_new_year_uses_the_last_rate():
     assert rate_for(store, 2027) == Rate(2027, 25)
     assert rate_for(store, 2025) == Rate(2025, 23)
     assert rate_for(store, 2024) is None
+
+
+def test_without_any_rate_2026_and_later_use_25_cents(env):
+    from kmlog.model import Rate
+    from kmlog.report.service import rate_for
+
+    app, store, mails, _ = env
+    store.delete_rate(2026)
+    assert store.rates() == []
+    assert rate_for(store, 2026) == Rate(2026, 25)
+    assert rate_for(store, 2027) == Rate(2027, 25)
+    assert rate_for(store, 2025) is None
+    store.put_rate(Rate(2025, 23))  # an earlier rate wins over the default
+    assert rate_for(store, 2026) == Rate(2026, 23)
+    store.delete_rate(2025)
+    cookie = login(app, mails)
+    body = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "€ 0,25 (standaard)" in body and 'name="euros" value="0,25"' in body
+    assert "Nog geen tarief" not in body
 
 
 def test_secret_without_value_means_not_linked():

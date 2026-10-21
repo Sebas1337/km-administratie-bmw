@@ -4,6 +4,10 @@
 <div class="card">
   <h1>Inloggen</h1>
   <p>Je krijgt een inloglink per mail. De link werkt 15 minuten en één keer.</p>
-  <form method="post" action="/login"><input type="hidden" name="next" value="{{ next }}"><button>Stuur inloglink</button></form>
+  <form method="post" action="/login" class="grid">
+    <input type="hidden" name="next" value="{{ next }}">
+    <div><label for="email">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254"></div>
+    <div><button>Stuur inloglink</button></div>
+  </form>
 </div>
 {% endblock %}

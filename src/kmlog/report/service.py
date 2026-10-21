@@ -12,12 +12,21 @@ class MissingConfig(LookupError):
     pass
 
 
+# Without any rate set, 2026 and later use the untaxed maximum of 2026 (EUR 0.25 per km).
+DEFAULT_RATE_CENTS = 25
+DEFAULT_RATE_FROM = 2026
+
+
 def rate_for(store: Store, year: int) -> Rate | None:
-    """The rate of `year`, or else the most recent earlier one (a new year starts without one)."""
+    """The rate of `year`, or else the most recent earlier one (a new year starts without one),
+    or else the default from DEFAULT_RATE_FROM on."""
     rate = store.rate(year)
     if rate is None:
         earlier = [r for r in store.rates() if r.year < year]
-        rate = Rate(year, earlier[-1].cents_per_km) if earlier else None
+        if earlier:
+            rate = Rate(year, earlier[-1].cents_per_km)
+        elif year >= DEFAULT_RATE_FROM:
+            rate = Rate(year, DEFAULT_RATE_CENTS)
     return rate
 
 
@@ -38,7 +47,6 @@ def maandstaat_from_store(store: Store, vehicle_id: str, year: int, month: int) 
         store.legs(vehicle_id, first, last),
         store.day_notes(vehicle_id, first, last),
         store.locations(),
-        store.routes(),
         store.observations(vehicle_id),
     )
 

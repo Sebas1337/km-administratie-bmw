@@ -5,25 +5,26 @@ locals {
       timeout = 60
       memory  = 256
     }
-    report = {
-      handler = "kmlog.aws.report.handler"
-      timeout = 120
-      memory  = 512
-    }
     web = {
       handler = "kmlog.aws.web.handler"
       timeout = 30
       memory  = 512
     }
   }
-  # notify is its own resource (aws_lambda_function.notify): its environment needs the web
-  # function URL, which depends on aws_lambda_function.fn — inside the map that is a cycle.
+  # notify and report are their own resources (aws_lambda_function.notify / .report): their
+  # environment needs the web function URL (links in the mails), which depends on
+  # aws_lambda_function.fn — inside the map that is a cycle.
   notify_fn = {
     handler = "kmlog.aws.notify.handler"
     timeout = 120
     memory  = 512
   }
-  all_functions = merge(local.lambdas, { notify = local.notify_fn })
+  report_fn = {
+    handler = "kmlog.aws.report.handler"
+    timeout = 120
+    memory  = 512
+  }
+  all_functions = merge(local.lambdas, { notify = local.notify_fn, report = local.report_fn })
   web_url       = var.web_domain != null ? "https://${var.web_domain}/" : aws_lambda_function_url.web.function_url
   common_env = {
     TABLE_NAME = aws_dynamodb_table.data.name
@@ -34,17 +35,20 @@ locals {
       SECRET_ID   = aws_secretsmanager_secret.cardata.name
       QUOTA_LIMIT = tostring(var.quota_limit)
     })
-    report = merge(local.common_env, {
-      REPORTS_BUCKET = aws_s3_bucket.reports.bucket
-      REPORT_EMAIL   = var.report_email
-    })
     web = merge(local.common_env, {
       REPORT_EMAIL  = var.report_email
       WEB_DOMAIN    = coalesce(var.web_domain, "")
       WEB_SECRET_ID = aws_secretsmanager_secret.web.name
       SECRET_ID     = aws_secretsmanager_secret.cardata.name # Auto page: link / unlink the car
       QUOTA_LIMIT   = tostring(var.quota_limit)
-    })
+      # "Opnieuw mailen" on the month page; a name, not a reference (that would be a cycle)
+      REPORT_FUNCTION = "kmlog-report"
+      # address/company search on the Instellingen page
+      GEOCODER_URL       = var.geocoder_url
+      GEOCODER_COUNTRIES = var.geocoder_countries
+      },
+      var.geocoder_contact == null ? {} : { GEOCODER_CONTACT = var.geocoder_contact },
+    )
   }
 }
 
@@ -107,6 +111,45 @@ resource "aws_lambda_function_event_invoke_config" "notify_no_retry" {
   function_name                = aws_lambda_function.notify.function_name
   maximum_retry_attempts       = 0
   maximum_event_age_in_seconds = 900
+}
+
+resource "aws_lambda_function" "report" {
+  function_name    = "kmlog-report"
+  role             = aws_iam_role.lambda["report"].arn
+  runtime          = "python3.12"
+  architectures    = ["arm64"]
+  handler          = local.report_fn.handler
+  timeout          = local.report_fn.timeout
+  memory_size      = local.report_fn.memory
+  filename         = local.lambda_zip
+  source_code_hash = filebase64sha256(local.lambda_zip)
+
+  environment {
+    variables = merge(local.common_env, {
+      REPORTS_BUCKET = aws_s3_bucket.reports.bucket
+      REPORT_EMAIL   = var.report_email
+      WEB_URL        = local.web_url
+    })
+  }
+
+  depends_on = [aws_iam_role_policy.lambda, aws_cloudwatch_log_group.lambda]
+}
+
+resource "aws_lambda_function_event_invoke_config" "report_no_retry" {
+  function_name                = aws_lambda_function.report.function_name
+  maximum_retry_attempts       = 0
+  maximum_event_age_in_seconds = 900
+}
+
+# v0.3.0 moved report out of the fn map (it needs the web URL); same function, no replacement
+moved {
+  from = aws_lambda_function.fn["report"]
+  to   = aws_lambda_function.report
+}
+
+moved {
+  from = aws_lambda_function_event_invoke_config.no_retry["report"]
+  to   = aws_lambda_function_event_invoke_config.report_no_retry
 }
 
 # --- web UI: public Function URL, authentication in the app (magic link + signed cookie) -------

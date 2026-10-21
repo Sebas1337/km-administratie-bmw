@@ -1,8 +1,9 @@
 """Command line: `uv run kmlog --help`.
 
-    kmlog stamdata                     <- data/stamdata.toml (vehicle, locations, routes, rates)
+    kmlog stamdata                     <- data/stamdata.toml (vehicle, locations, rates)
     kmlog maandstaat 2026 9            -> data/reports/2026/2026-09.xlsx
     kmlog jaaroverzicht 2026           -> data/reports/2026/jaaroverzicht-2026.xlsx
+    kmlog vergelijk 2026-10-01 2026-10-31   ritten opnieuw indelen op een kopie, verschillen tonen
 
 Everything lives in a local SQLite database (default data/kmlog.sqlite, gitignored), or with
 `--store dynamodb` in the AWS table (default kmlog-data; AWS credentials from the environment):
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 from . import stamdata
@@ -28,6 +30,7 @@ from .report.maandstaat import (
 )
 from .report.service import MissingConfig, maandstaat_from_store
 from .store import Store, open_store
+from .version import VERSION
 
 DEFAULT_DB = Path("data/kmlog.sqlite")
 DEFAULT_REPORTS = Path("data/reports")
@@ -64,7 +67,7 @@ def cmd_stamdata(args, store: Store) -> None:
     for rate in data.rates:
         store.put_rate(rate)
     print(
-        f"{len(data.locations)} locaties, {len(data.routes)} routes, {len(data.rates)} tarieven "
+        f"{len(data.locations)} locaties, {len(data.rates)} tarieven "
         f"uit {args.path} → {args.target}"
     )
 
@@ -97,15 +100,35 @@ def cmd_jaaroverzicht(args, store: Store) -> None:
     print(f"Totaal {args.year}: {total_km} km = {total} → {out}")
 
 
+def _show(leg) -> str:
+    if leg is None:
+        return "–"
+    question = f", vraag {leg.question} ({leg.status.value})" if leg.question else ""
+    return f"{int(leg.business_km)}/{int(leg.distance_km)} km zakelijk{question}"
+
+
+def cmd_vergelijk(args, store: Store) -> None:
+    from datetime import UTC, datetime
+
+    from .compare import compare
+
+    changes = compare(store, args.vehicle, args.first, args.last, datetime.now(UTC))
+    for c in changes:
+        print(f"{c.day}  {c.description:28} {_show(c.before):34} → {_show(c.after)}")
+    delta = sum((c.business_delta for c in changes), 0)
+    print(f"{len(changes)} rit(ten) anders; zakelijk {delta:+} km (niets opgeslagen)")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="kmlog", description="Kilometeradministratie")
+    parser.add_argument("--version", action="version", version=f"kmlog {VERSION}")
     parser.add_argument("--store", choices=["sqlite", "dynamodb"], default="sqlite")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite file")
     parser.add_argument("--table", default="kmlog-data", help="DynamoDB table")
     parser.add_argument("--vehicle", default=DEFAULT_VEHICLE)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("stamdata", help="voertuig, locaties, routes en tarieven inlezen (TOML)")
+    p = sub.add_parser("stamdata", help="voertuig, locaties en tarieven inlezen (TOML)")
     p.add_argument("path", type=Path, nargs="?", default=stamdata.DEFAULT_PATH)
     p.add_argument(
         "--export",
@@ -129,6 +152,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("year", type=int)
     p.add_argument("--out", type=Path)
     p.set_defaults(func=cmd_jaaroverzicht)
+
+    p = sub.add_parser(
+        "vergelijk", help="ritten op een kopie opnieuw indelen en de verschillen tonen"
+    )
+    p.add_argument("first", type=date.fromisoformat, metavar="van (YYYY-MM-DD)")
+    p.add_argument("last", type=date.fromisoformat, metavar="tot en met")
+    p.set_defaults(func=cmd_vergelijk)
 
     args = parser.parse_args(argv)
     args.target = args.db if args.store == "sqlite" else f"dynamodb:{args.table}"
