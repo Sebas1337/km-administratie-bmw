@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import openpyxl
 import pytest
+from openpyxl import load_workbook
 
 from kmlog.classify import Answer, apply_answer
 from kmlog.cli import main
@@ -203,7 +204,7 @@ def test_cli_version(capsys):
     assert capsys.readouterr().out.strip() == f"kmlog {VERSION}"
 
 
-def test_private_only_days_and_trips_are_left_out():
+def test_private_only_days_and_trips_are_left_out_of_the_excel(tmp_path):
     private, _ = _private_day(WORKDAY)  # home -> unknown -> home, 0 km business
     errand = [  # 3 km home -> home, then a normal client day
         ("00:00", "06:00", "home", 41_000),
@@ -213,18 +214,21 @@ def test_private_only_days_and_trips_are_left_out():
     ]
     mixed, _ = run(date(2026, 10, 8), errand)
     first, _ = run(date(2026, 10, 9), normal_day(31, "client2", out_km=75))  # open question
-    notes = [DayNote("car", WORKDAY, "Motor")]
+    notes = [DayNote("car", date(2026, 10, 6), "Motor")]
     m = build_maandstaat(2026, 10, CAR, RATE, [*private, *mixed, *first], notes, LOCATIONS)
-    assert [(r.date.day, r.description) for r in m.rows] == [
-        (7, "Motor"),  # the private trips are gone, the note stays
-        (8, "Thuis → Thuis → Klant → Thuis"),
-        (9, "Thuis → Klant 2 → Thuis"),
+    # the month page shows everything
+    assert [(r.date.day, r.declared) for r in m.rows] == [
+        (6, True),
+        (7, False),
+        (8, True),
+        (9, True),
     ]
-    assert (m.rows[1].driven_km, m.rows[1].private_km) == (144, 3)  # the day is complete
-    assert [t.description for t in m.trips] == [
-        "Thuis → Klant",
-        "Klant → Thuis",
-        "Thuis → Klant 2",  # 0 km until answered, but open
-        "Klant 2 → Thuis",
-    ]
-    assert len(m.unknown_places) == 1  # the review list still has the private day
+    assert (m.rows[2].driven_km, m.rows[2].private_km) == (144, 3)  # the day is complete
+    assert len(m.trips) == 7
+
+    wb = load_workbook(write_maandstaat(m, tmp_path / "okt.xlsx"))
+    table = wb.worksheets[0].iter_rows(min_row=9, max_row=8 + 4, values_only=True)
+    days = [r[2] for r in table if isinstance(r[1], str)]  # rows with a weekday
+    assert days == ["Motor", "Thuis → Thuis → Klant → Thuis", "Thuis → Klant 2 → Thuis"]
+    trips = [r[4] for r in wb.worksheets[1].iter_rows(min_row=5, values_only=True) if r[0]]
+    assert trips == ["Thuis → Klant", "Klant → Thuis", "Thuis → Klant 2", "Klant 2 → Thuis"]

@@ -7,6 +7,12 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-21
+
+### Gerepareerd
+- De maandpagina toont weer alle dagen en ritten, ook die alleen privé zijn (de ingang naar de
+  dagpagina). Alleen de Excel laat ze weg.
+
 ## [0.3.1] - 2026-10-21
 
 ### Gewijzigd
@@ -61,7 +67,8 @@ Eerste versie, zoals live sinds 10 oktober 2026 (stand van PR #2).
 - Maandstaat en jaaroverzicht als Excel, maandelijks per mail; dagelijkse melding van open vragen.
 - "gemist?"-mail als instelling, standaard uit.
 
-[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.0...v0.2.1
