@@ -47,8 +47,12 @@ locals {
       GEOCODER_COUNTRIES = var.geocoder_countries
       },
       var.geocoder_contact == null ? {} : { GEOCODER_CONTACT = var.geocoder_contact },
-      # own domain behind CloudFront: the one X-Forwarded-Host the app trusts
-      var.web_domain == null ? {} : { WEB_DOMAIN = var.web_domain },
+      # own domain behind CloudFront: the one X-Forwarded-Host the app trusts, and the secret
+      # header CloudFront adds so the Function URL cannot be used directly
+      var.web_domain == null ? {} : {
+        WEB_DOMAIN    = var.web_domain
+        ORIGIN_SECRET = random_password.origin_verify[0].result
+      },
     )
   }
 }
@@ -70,6 +74,8 @@ resource "aws_lambda_function" "fn" {
   memory_size      = each.value.memory
   filename         = local.lambda_zip
   source_code_hash = filebase64sha256(local.lambda_zip)
+  # cost cap for the public web UI: a flood of requests is throttled instead of scaled out
+  reserved_concurrent_executions = each.key == "web" && var.web_max_concurrency != null ? var.web_max_concurrency : -1
 
   environment {
     variables = local.lambda_env[each.key]
@@ -179,6 +185,14 @@ resource "aws_acm_certificate_validation" "web" {
   }
 }
 
+# Shared secret CloudFront sends to the web Lambda (X-Origin-Verify); the app rejects requests
+# without it, so only the own domain (or the distribution's cloudfront.net name) reaches it.
+resource "random_password" "origin_verify" {
+  count   = var.web_domain != null ? 1 : 0
+  length  = 40
+  special = false
+}
+
 resource "aws_cloudfront_distribution" "web" {
   count        = var.web_domain != null ? 1 : 0
   enabled      = true
@@ -193,6 +207,10 @@ resource "aws_cloudfront_distribution" "web" {
     custom_header {
       name  = "X-Forwarded-Host"
       value = var.web_domain
+    }
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = random_password.origin_verify[0].result
     }
     custom_origin_config {
       http_port              = 80

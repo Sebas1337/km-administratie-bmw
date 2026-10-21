@@ -93,3 +93,9 @@ variable "web_domain" {
   type        = string
   default     = null
 }
+
+variable "web_max_concurrency" {
+  description = "Reserved concurrency of the web Lambda: a cost cap against request floods (one user needs 1-2). null = no cap; the account needs enough unreserved concurrency (AWS keeps at least 10 free)."
+  type        = number
+  default     = 5
+}

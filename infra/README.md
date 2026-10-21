@@ -40,6 +40,7 @@ Zie [`variables.tf`](variables.tf); zet ze in `infra/terraform.tfvars` (gitignor
 | `geocoder_countries` | `nl` | landcodes waarop gezocht wordt, bijv. `nl,be,de` |
 | `geocoder_contact` | de repo-URL | contact-URL in de User-Agent van zoekopdrachten |
 | `web_domain` | — | eigen domein voor de webinterface, zie *Eigen domein* |
+| `web_max_concurrency` | `5` | maximaal aantal gelijktijdige uitvoeringen van de web-Lambda (kostenplafond); `null` = geen plafond |
 | `dkim_private_key_file` | — | alleen voor Bring Your Own DKIM, zie hieronder |
 
 ## Bijwerken
@@ -114,8 +115,9 @@ Nodig:
   *DNS only* (grijze wolk), niet *Proxied*. Strato kan het niet.
 
 Een Function URL luistert alleen op zijn eigen hostnaam, dus CloudFront stuurt de gewenste host mee
-als `X-Forwarded-Host`; de webapp vertrouwt die alleen als hij gelijk is aan `WEB_DOMAIN`. De
-Function URL zelf blijft bereikbaar, maar inloglinks wijzen dan naar je eigen domein. Je domein
+als `X-Forwarded-Host`; de webapp vertrouwt die alleen als hij gelijk is aan `WEB_DOMAIN`. CloudFront
+stuurt ook een geheime header mee (`X-Origin-Verify`, door Terraform gegenereerd); de webapp
+weigert verzoeken zonder die header, dus de kale Function URL werkt dan niet meer (403). Je domein
 komt in de openbare certificaatlogs; de inlogpagina vraagt daarom je e-mailadres (zie README).
 
 Aanzetten gaat in twee stappen, want CloudFront heeft een uitgegeven certificaat nodig. Zet eerst
@@ -132,7 +134,14 @@ scripts/deploy.sh vX.Y.Z --apply                                   #    zet de l
 terraform -chdir=infra output web_domain_dns_records              # 3. CNAME van je domein naar CloudFront
 ```
 
-Na stap 3 kan het een paar minuten duren voor de DNS overal bekend is. Uitzetten: `web_domain`
+Na stap 3 kan het een paar minuten duren voor de DNS overal bekend is. Bij Cloudflare: laat beide
+records op *DNS only*; met *Proxied* staat Cloudflare met een eigen certificaat tussen je browser en
+AWS en ziet het al het verkeer (inloglinks, ritten).
+
+Los van het eigen domein geldt een kostenplafond: de web-Lambda draait met hooguit
+`web_max_concurrency` (5) uitvoeringen tegelijk, zodat een vloed verzoeken wordt afgeknepen in
+plaats van opgeschaald. AWS houdt per account minstens 10 niet-gereserveerde uitvoeringen vrij; is
+het accountlimiet lager dan 15, zet dan `web_max_concurrency = null`. Uitzetten: `web_domain`
 weghalen en opnieuw deployen; certificaat en distributie worden dan verwijderd.
 
 ## Adres zoeken
