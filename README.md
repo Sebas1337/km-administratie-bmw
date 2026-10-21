@@ -32,7 +32,7 @@ en op de 1e van de maand komt de maandstaat in je mail.
   Dagen waarop je de auto niet gebruikt, staan ook niet op de maandstaat.
 - **Maandstaat en jaaroverzicht** als Excel, met per dag gereden, zakelijke en
   privé-kilometers en de kilometerstand, en per rit een korte uitleg. Dagen met alleen
-  privéritten staan er niet op. Het tarief per km stel je per jaar in.
+  privéritten staan niet in de Excel, wel op de maandpagina. Het tarief per km stel je per jaar in.
 - **Webinterface** voor telefoon en desktop: maand-, dag- en jaaroverzicht, kaartjes van
   elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), instellingen, en
   het koppelen van de auto. Inloggen gaat zonder wachtwoord, met een link per mail.

@@ -300,9 +300,9 @@ Tijd: opgeslagen in UTC, getoond in `Europe/Amsterdam`.
 **Maandstaat** (.xlsx): voertuig, maand, tarief; per dag: datum, omschrijving (bijv.
 "Thuis → Klant → Thuis"), gereden/zakelijke/privé km, opmerking/vlag; totaal km, bedrag;
 kilometerstand begin en einde maand; lijst van openstaande bevestigingen (die tellen conservatief
-mee). Dagen en ritten die alleen privé zijn (geen zakelijke km, geen open vraag) staan er niet op:
-die staan op de dagpagina, en als onbekende plek of weekendrit naar een klant in de lijsten van de
-maandmail. Een dag met een zakelijke rit telt wel al zijn km (ook een privéritje die dag). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
+mee). Dagen en ritten die alleen privé zijn (geen zakelijke km, geen open vraag) staan niet in de
+Excel (de declaratie voor de BV); de maandpagina toont ze wel, als ingang naar de dagpagina. Een
+dag met een zakelijke rit telt al zijn km (ook een privéritje die dag). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
 
 **Maandmail**: bedrag, jaartotaal, openstaande bevestigingen, en twee lijsten om gemiste zakelijke
 ritten te vinden (elk met een link naar de dagpagina, geen coördinaten in de mail):
@@ -454,7 +454,7 @@ tijdstempels.
 | 2026-10-21 | Onbekende plek = privé zonder vraag, ook op werkdagen (regel 4 vervalt, regel 5 zonder vraag); overzicht in de maandmail; elke plek achteraf opslaan als klant/zakelijk/privé | Vragen over privéritten zijn ruis. Een gemiste zakelijke rit vang je op via de maandmail; eenmalige privéplekken hoeven niet opgeslagen te worden. |
 | 2026-10-21 | Weekend en feestdag altijd privé zonder vraag, ook bij een klant; knop *Toch zakelijk*; vangnet in de maandmail | Voorheen telde een weekendrit naar een klant zakelijk tot je *Privé* zei; een klant in een winkelcentrum gaf elk weekend een vraag en bij een gemiste vraag een onterechte declaratie. |
 | 2026-10-21 | Maandstaat die na verzending wijzigt: melding op de maandpagina + *Opnieuw mailen* | Een plek uit de maandmail opslaan verandert de vorige maand; de BV moet de gecorrigeerde staat krijgen. |
-| 2026-10-21 | Privédagen en -ritten niet op de maandstaat (Excel en maandpagina); de lijsten in de maandmail blijven | De maandstaat is voor de BV: alleen wat gedeclareerd wordt of nog open staat. De lijsten blijven het vangnet voor een vergeten zakelijke rit. |
+| 2026-10-21 | Privédagen en -ritten niet in de Excel; de maandpagina en de lijsten in de maandmail tonen ze wel | De Excel is de declaratie voor de BV: alleen wat gedeclareerd wordt of nog open staat. Op de maandpagina zijn ze de ingang naar de dagpagina (plek opslaan, corrigeren). |
 | 2026-10-21 | Zonder ingesteld tarief vanaf 2026 € 0,25 per km | Een nieuwe installatie maakt meteen een maandstaat; € 0,25 is de onbelaste maximumvergoeding van 2026. |
 
 ## 12. Bronnen

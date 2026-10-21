@@ -6,8 +6,8 @@ begin/end of the month (from observations), and the list of open
 confirmations. The day rows are the declaration; `trips` lists the same legs one per row
 (rit) for inspection, with times, odometer and pass-through points. Open confirmations
 already carry their conservative default, so they are counted as-is. Days and trips that are
-only private (no business km, no open question) are left out; they are on the day page, and
-unknown places and weekend client trips in the review lists. `unknown_places` and
+only private (no business km, no open question) are marked `declared=False`: the web UI shows
+them, the Excel (the declaration) leaves them out. `unknown_places` and
 `weekend_trips` are the review lists of the monthly mail (kmlog.review). The jaaroverzicht shows
 km and amount per month.
 
@@ -66,6 +66,7 @@ class DayRow:
     private_km: int = 0
     remark: str = ""
     open_confirmation: bool = False
+    declared: bool = True  # False: only private trips, left out of the Excel
     odometer_from: int | None = None  # km-stand when leaving for the first leg of the day
     odometer_to: int | None = None  # km-stand after the last leg of the day
 
@@ -86,6 +87,7 @@ class TripRow:
     private_km: int = 0
     remark: str = ""
     open_confirmation: bool = False
+    declared: bool = True
     odometer_from: int | None = None
     odometer_to: int | None = None
 
@@ -195,9 +197,8 @@ def build_maandstaat(
     rows: list[DayRow] = []
     for day in sorted(set(by_day) | set(notes)):
         day_legs = by_day.get(day, [])
-        if not _declared(day_legs):  # no trips, or only private ones: the note, if any
-            if day in notes:
-                rows.append(DayRow(date=day, description=notes[day]))
+        if not day_legs:
+            rows.append(DayRow(date=day, description=notes[day]))
             continue
         remark, open_ = _remarks(day_legs, notes.get(day))
         rows.append(
@@ -209,6 +210,7 @@ def build_maandstaat(
                 private_km=sum(_km(leg.private_km) for leg in day_legs),
                 remark=remark,
                 open_confirmation=open_,
+                declared=_declared(day_legs),
                 odometer_from=next(
                     (leg.odometer_from for leg in day_legs if leg.odometer_from is not None), None
                 ),
@@ -222,8 +224,6 @@ def build_maandstaat(
     trips: list[TripRow] = []
     for day in sorted(by_day):
         for leg in by_day[day]:
-            if not _declared([leg]):
-                continue
             remark, open_ = _remarks([leg])
             trips.append(
                 TripRow(
@@ -238,6 +238,7 @@ def build_maandstaat(
                     private_km=_km(leg.private_km),
                     remark=remark,
                     open_confirmation=open_,
+                    declared=_declared([leg]),
                     odometer_from=leg.odometer_from,
                     odometer_to=leg.odometer_to,
                 )
@@ -346,7 +347,7 @@ def write_maandstaat_sheet(ws, m: Maandstaat) -> None:
         ],
     )
     row = head
-    for r in m.rows:
+    for r in (r for r in m.rows if r.declared):
         row += 1
         values = [r.date, WEEKDAYS[r.date.weekday()], r.description]
         values += [r.odometer_from, r.odometer_to]
@@ -390,7 +391,8 @@ def _hhmm(ts: datetime | None) -> str | None:
 
 
 def write_trips_sheet(ws, m: Maandstaat) -> None:
-    """Every leg of the month on its own row, for inspection; the declaration is the day sheet."""
+    """Every declared leg of the month on its own row, for inspection; the declaration is the
+    day sheet. Private-only legs are left out, as on the day sheet."""
     ws.title = f"Ritten {MONTHS[m.month]} {m.year}"
     ws["A1"] = f"Ritten {MONTHS[m.month]} {m.year}"
     ws["A1"].font = TITLE
@@ -417,8 +419,9 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
             "Opmerking",
         ],
     )
+    trips = [t for t in m.trips if t.declared]
     row = head
-    for t in m.trips:
+    for t in trips:
         row += 1
         values = [
             t.date,
@@ -442,9 +445,9 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
     row += 2
     ws.cell(row, 5, "Totaal").font = BOLD
     for col, value in [
-        (9, sum(t.driven_km for t in m.trips)),
-        (10, sum(t.business_km for t in m.trips)),
-        (11, sum(t.private_km for t in m.trips)),
+        (9, sum(t.driven_km for t in trips)),
+        (10, sum(t.business_km for t in trips)),
+        (11, sum(t.private_km for t in trips)),
     ]:
         ws.cell(row, col, value).font = BOLD
     _widths(ws, [12, 5, 13, 12, 30, 50, 15, 17, 11, 11, 9, 40])
@@ -480,7 +483,7 @@ def write_maandstaat(m: Maandstaat, out_path: str | Path) -> Path:
     """The maandstaat (declaration) and, if there are any, its trips on a second sheet."""
     wb = Workbook()
     write_maandstaat_sheet(wb.active, m)
-    if m.trips:
+    if any(t.declared for t in m.trips):
         write_trips_sheet(wb.create_sheet(), m)
     return _save(wb, out_path)
 
