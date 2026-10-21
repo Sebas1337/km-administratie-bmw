@@ -11,6 +11,8 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 - Versiebeheer: release per git-tag met `lambda.zip` (GitHub Actions), `scripts/deploy.sh vX.Y.Z`
   om een bepaalde versie te installeren of terug te zetten. De versie staat onderaan de
   webinterface, in elke logregel en in `kmlog --version`.
+- Instellingen: locatie zoeken op adres of bedrijfsnaam (OpenStreetMap) en het formulier
+  "locatie toevoegen" voorgevuld openen, met kaartje (PR #4).
 
 ## [0.1.0] - 2026-10-13
 
