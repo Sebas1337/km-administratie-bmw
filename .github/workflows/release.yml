@@ -1,0 +1,42 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds dist/lambda.zip and publishes it as a GitHub Release.
+# scripts/deploy.sh vX.Y.Z deploys exactly that zip (checked against lambda.zip.sha256).
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe in build_lambda.sh needs the tags
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Tag matches pyproject version
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          test "$GITHUB_REF_NAME" = "v$version" || { echo "tag $GITHUB_REF_NAME != pyproject v$version"; exit 1; }
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+      - run: ./scripts/build_lambda.sh
+      - run: cd dist && sha256sum lambda.zip > lambda.zip.sha256
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }' CHANGELOG.md > dist/notes.md
+          test -s dist/notes.md || { echo "no CHANGELOG.md section for $GITHUB_REF_NAME"; exit 1; }
+      - run: gh release create "$GITHUB_REF_NAME" dist/lambda.zip dist/lambda.zip.sha256 --title "$GITHUB_REF_NAME" --notes-file dist/notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}

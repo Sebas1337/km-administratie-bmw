@@ -55,6 +55,7 @@ from ..report.maandstaat import (
 )
 from ..report.service import MissingConfig, maandstaat_from_store, rate_for
 from ..store import Store
+from ..version import VERSION
 from .auth import Auth, Session
 from .osm_map import TILE_ORIGIN, static_map
 
@@ -244,6 +245,7 @@ def _environment() -> Environment:
         QUESTION_TEXT=QUESTION_TEXT,
         LOCATION_TYPES=LOCATION_TYPES,
         STATUS_TEXT=STATUS_TEXT,
+        version=VERSION,
     )
     return env
 

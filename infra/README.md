@@ -44,7 +44,9 @@ Zie [`variables.tf`](variables.tf); zet ze in `infra/terraform.tfvars` (gitignor
 ## Bijwerken
 
 ```sh
-set -a; . ./.env; set +a
+scripts/deploy.sh vX.Y.Z      # een release installeren of terugzetten (zie README, Bijwerken)
+
+set -a; . ./.env; set +a      # of de huidige broncode, zonder release
 ./scripts/build_lambda.sh && terraform -chdir=infra apply
 ```
 

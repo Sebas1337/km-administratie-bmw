@@ -12,6 +12,7 @@ from kmlog.geocode import GeocodeError, Place
 from kmlog.model import LegSource, LegStatus, LocationType, Observation
 from kmlog.process import rederive
 from kmlog.store.sqlite import SqliteStore
+from kmlog.version import VERSION
 from kmlog.web.app import Request, WebApp, safe_next
 from kmlog.web.auth import Auth
 from test_aws_handlers import seeded
@@ -345,6 +346,14 @@ def test_lambda_handler_logs_without_query(env, capsys):
     assert resp["statusCode"] == 200
     out = capsys.readouterr().out
     assert '"path": "/login"' in out and "secret" not in out
+    assert f'"version": "{VERSION}"' in out
+
+
+def test_version_in_footer_only_when_logged_in(env):
+    app, _, mails, _ = env
+    assert VERSION not in app(event("GET", "/login"))["body"]
+    cookie = login(app, mails)
+    assert f"km-admin {VERSION}" in app(event("GET", "/instellingen", cookie=cookie))["body"]
 
 
 def test_request_parses_base64_body():

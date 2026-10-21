@@ -165,3 +165,11 @@ def test_trips_one_row_per_leg():
     ]
     assert all(t.open_confirmation and t.remark == "te bevestigen" for t in m.trips[1:])
     assert sum(t.business_km for t in m.trips) == m.business_km
+
+
+def test_cli_version(capsys):
+    from kmlog.version import VERSION
+
+    with pytest.raises(SystemExit):
+        main(["--version"])
+    assert capsys.readouterr().out.strip() == f"kmlog {VERSION}"
