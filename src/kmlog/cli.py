@@ -28,6 +28,7 @@ from .report.maandstaat import (
 )
 from .report.service import MissingConfig, maandstaat_from_store
 from .store import Store, open_store
+from .version import VERSION
 
 DEFAULT_DB = Path("data/kmlog.sqlite")
 DEFAULT_REPORTS = Path("data/reports")
@@ -99,6 +100,7 @@ def cmd_jaaroverzicht(args, store: Store) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="kmlog", description="Kilometeradministratie")
+    parser.add_argument("--version", action="version", version=f"kmlog {VERSION}")
     parser.add_argument("--store", choices=["sqlite", "dynamodb"], default="sqlite")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite file")
     parser.add_argument("--table", default="kmlog-data", help="DynamoDB table")

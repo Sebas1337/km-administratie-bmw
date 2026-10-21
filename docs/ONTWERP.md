@@ -392,6 +392,8 @@ tijdstempels.
 | 2026-10-13 | Uitleesvenster instelbaar in de webinterface (standaard 06–23); de scheduler roept de poller elk uur aan en die slaat uren buiten het venster over vóór elke BMW-call | Wie 's nachts rijdt, wil ook dan metingen; 24 polls per dag passen in het quotum (50, eigen grens 40). Zonder deploy aan te passen; een overgeslagen uur kost alleen een Lambda-aanroep. De webinterface weigert een venster dat niet past. |
 | 2026-10-13 | Pagina "Stamdata" heet "Instellingen" (`/instellingen`, `/stamdata` stuurt door) | Er staan nu ook auto, tarief en uitleesvenster op; "stamdata" blijft de term voor locaties, routes en het TOML-bestand. |
 | 2026-10-13 | "gemist?"-mail (regel 7) uitzetbaar in Instellingen, standaard uit | Elke privérit op een werkdag gaf een mail zonder iets te beantwoorden (ook onder de 20 km van regel 5); de mail moet alleen komen als er iets te doen is. |
+| 2026-10-21 | Versies: git-tag `vX.Y.Z` = code + infra, GitHub Release met `lambda.zip`, `scripts/deploy.sh` installeert of zet terug | Bijwerken en terugzetten naar een bekende versie moet één commando zijn, met exact het geteste bestand. Geen aparte testomgeving: de auto is maar door één installatie uit te lezen (tokens roteren, quotum 50/dag). |
+| 2026-10-21 | Opgeslagen gegevens alleen uitbreiden (geen velden hernoemen of verwijderen, geen nieuwe enum-waarden zonder vermelding) | Terugzetten moet de gegevens van een nieuwere versie kunnen lezen. Ritten worden elk uur opnieuw berekend, dus alleen antwoorden, correcties en stamdata blijven staan. |
 
 ## 12. Bronnen
 

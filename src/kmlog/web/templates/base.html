@@ -68,5 +68,6 @@ details summary { cursor:pointer; color:var(--accent); }
 {% if ok %}<div class="ok">{{ ok }}</div>{% endif %}
 {% block content %}{% endblock %}
 </main>
+{% if session %}<footer class="muted small">km-admin {{ version }}</footer>{% endif %}
 </body>
 </html>

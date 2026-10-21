@@ -237,11 +237,21 @@ daarvoor eenmalig de cost-allocation-tag `project` (Billing → Cost allocation 
 
 ## Bijwerken
 
+Elke versie is een git-tag (`v0.2.0`) met een GitHub Release; wat er per versie verandert staat in
+[CHANGELOG.md](CHANGELOG.md). Bijwerken naar een versie, of terugzetten naar een oudere:
+
 ```sh
-git pull
-set -a; . ./.env; set +a
-./scripts/build_lambda.sh && terraform -chdir=infra apply
+git checkout main && git pull
+scripts/deploy.sh v0.2.0
 ```
+
+Het script checkt de tag uit (code én infra), haalt `lambda.zip` van die release (met
+controle van de checksum), toont het AWS-account en draait `terraform apply`, dat het plan laat
+zien en om bevestiging vraagt. Daarna staat je map weer op `main`. Eerst alleen kijken wat er
+verandert: `scripts/deploy.sh v0.2.0 --plan` (en daarna `--apply` voor precies dat plan). De versie die draait staat
+onderaan de webinterface. Je gegevens blijven bij terugzetten staan (zie AGENTS.md, *Versions*).
+
+Zelf gebouwd vanaf de broncode (zonder release): `./scripts/build_lambda.sh && terraform -chdir=infra apply`.
 
 ## Problemen oplossen
 
