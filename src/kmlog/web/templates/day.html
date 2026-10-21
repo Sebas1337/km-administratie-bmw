@@ -23,8 +23,29 @@
   {% endif %}
   <div>{{ leg.distance_km|km }} km gereden{% if leg.odometer_from is not none %} (km-stand {{ leg.odometer_from|km }} → {{ leg.odometer_to|km }}){% endif %} · <strong>{{ leg.business_km|km }} km zakelijk</strong>{% if leg.private_km %} · {{ leg.private_km|km }} km privé{% endif %}
     {% if STATUS_TEXT[leg.status.value] %} · <span class="badge">{{ STATUS_TEXT[leg.status.value] }}</span>{% endif %}</div>
+  {% if leg.source == CARDATA and leg|explain %}<div class="muted">{{ leg|explain }}</div>{% endif %}
   {% if leg.note and leg.source == CARDATA %}<div class="muted">{{ leg.note }}</div>{% endif %}
   {% if leg.id in arrival_maps %}{{ static_map(arrival_maps[leg.id], leg.to_latlon) }}{% endif %}
+  {% if leg.question == WEEKEND and leg.segment_id == leg.id and leg.segment_id not in answered %}
+  <form class="inline" method="post" action="/antwoord">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="segment" value="{{ leg.segment_id }}">
+    <input type="hidden" name="answer" value="confirm"><input type="hidden" name="next" value="{{ here }}">
+    <button class="secondary">Toch zakelijk</button>
+  </form>
+  {% endif %}
+  {% if leg.source == CARDATA and leg.to_location is none and leg.to_latlon %}
+  <details>
+    <summary>Plek opslaan als klant, zakelijk of privé</summary>
+    <form method="post" action="/plek" class="grid">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="leg" value="{{ leg.id }}">
+      <input type="hidden" name="date" value="{{ day.isoformat() }}"><input type="hidden" name="next" value="{{ here }}">
+      <div><label>Naam</label><input name="name" required maxlength="80"></div>
+      <div><label>Soort</label><select name="type"><option value="client">klant</option><option value="business">zakelijk</option><option value="private">privé</option></select></div>
+      <div><button>Opslaan</button></div>
+    </form>
+    <p class="muted small">Eenmalige privéplekken hoef je niet op te slaan: ze tellen al als privé.</p>
+  </details>
+  {% endif %}
   {% if leg.segment_id in answered and leg.segment_id == leg.id %}
   <form class="inline" method="post" action="/antwoord/herstel">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="segment" value="{{ leg.segment_id }}"><input type="hidden" name="next" value="{{ here }}">

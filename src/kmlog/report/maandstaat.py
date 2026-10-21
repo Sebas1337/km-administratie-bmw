@@ -1,11 +1,12 @@
 """Maandstaat and jaaroverzicht (Excel, later PDF). See ONTWERP.md §9.
 
-Per month: vehicle, rate; per day: date, description, route(s), driven / business / private km,
+Per month: vehicle, rate; per day: date, description, driven / business / private km,
 remark (note, flags, open confirmation); totals (business km, amount in cents), odometer at
 begin/end of the month (from observations), and the list of open
 confirmations. The day rows are the declaration; `trips` lists the same legs one per row
 (rit) for inspection, with times, odometer and pass-through points. Open confirmations
-already carry their conservative default, so they are counted as-is. The jaaroverzicht shows
+already carry their conservative default, so they are counted as-is. `unknown_places` and
+`weekend_trips` are the review lists of the monthly mail (kmlog.review). The jaaroverzicht shows
 km and amount per month.
 
 Building (pure, testable) and writing (openpyxl) are separate steps.
@@ -24,8 +25,10 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from ..classify import explain
 from ..derive import AMSTERDAM, amsterdam_date
-from ..model import DayNote, Leg, LegSource, LegStatus, Location, Observation, Rate, Route, Vehicle
+from ..model import DayNote, Leg, LegSource, LegStatus, Location, Observation, Rate, Vehicle
+from ..review import UnknownPlace, WeekendTrips, unknown_places, weekend_client_trips
 
 MONTHS = [
     "",
@@ -46,7 +49,8 @@ WEEKDAYS = ["ma", "di", "wo", "do", "vr", "za", "zo"]
 OPEN = (LegStatus.NEEDS_CONFIRMATION,)
 FLAG_TEXT = {
     "weekend_or_holiday": "weekend/feestdag",
-    "no_route": "geen bekende route",
+    "no_route": "geen bekende route",  # before v0.3.0
+    "implausible": "eerste rit niet aannemelijk",
     "manual_correction": "handmatig gecorrigeerd",
 }
 
@@ -55,7 +59,6 @@ FLAG_TEXT = {
 class DayRow:
     date: date
     description: str
-    routes: str = ""
     driven_km: int = 0
     business_km: int = 0
     private_km: int = 0
@@ -75,7 +78,7 @@ class TripRow:
     leg_id: str
     departed_after: datetime | None = None
     arrived_at: datetime | None = None
-    route: str = ""
+    explanation: str = ""
     driven_km: int = 0
     business_km: int = 0
     private_km: int = 0
@@ -95,6 +98,8 @@ class Maandstaat:
     trips: list[TripRow] = field(default_factory=list)
     odometer_start: int | None = None
     odometer_end: int | None = None
+    unknown_places: list[UnknownPlace] = field(default_factory=list)
+    weekend_trips: list[WeekendTrips] = field(default_factory=list)
 
     @property
     def title(self) -> str:
@@ -161,13 +166,12 @@ def build_maandstaat(
     legs: Iterable[Leg],
     day_notes: Iterable[DayNote] = (),
     locations: Iterable[Location] = (),
-    routes: Iterable[Route] = (),
     observations: Iterable[Observation] = (),
 ) -> Maandstaat:
     if rate.year != year:
         raise ValueError(f"rate is for {rate.year}, not {year}")
+    locations = list(locations)
     names = {loc.id: loc.name for loc in locations}
-    route_names = {r.id: r.name for r in routes}
     first, last = date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 
     by_day: dict[date, list[Leg]] = {}
@@ -188,12 +192,10 @@ def build_maandstaat(
             rows.append(DayRow(date=day, description=notes[day]))
             continue
         remark, open_ = _remarks(day_legs, notes.get(day))
-        matched = [route_names.get(leg.matched_route, leg.matched_route) for leg in day_legs]
         rows.append(
             DayRow(
                 date=day,
                 description=describe(day_legs, names),
-                routes=", ".join(dict.fromkeys(m for m in matched if m)),
                 driven_km=sum(_km(leg.distance_km) for leg in day_legs),
                 business_km=sum(_km(leg.business_km) for leg in day_legs),
                 private_km=sum(_km(leg.private_km) for leg in day_legs),
@@ -220,7 +222,7 @@ def build_maandstaat(
                     leg_id=leg.id,
                     departed_after=leg.departed_after,
                     arrived_at=leg.arrived_at,
-                    route=route_names.get(leg.matched_route, leg.matched_route) or "",
+                    explanation=explain(leg),
                     driven_km=_km(leg.distance_km),
                     business_km=_km(leg.business_km),
                     private_km=_km(leg.private_km),
@@ -234,6 +236,7 @@ def build_maandstaat(
     odometers = [
         o.odometer_km for o in observations if first <= amsterdam_date(o.polled_at) <= last
     ]
+    month_legs = [leg for day_legs in by_day.values() for leg in day_legs]
     return Maandstaat(
         vehicle=vehicle,
         year=year,
@@ -243,6 +246,8 @@ def build_maandstaat(
         trips=trips,
         odometer_start=min(odometers, default=None),
         odometer_end=max(odometers, default=None),
+        unknown_places=unknown_places(month_legs),
+        weekend_trips=weekend_client_trips(month_legs, locations),
     )
 
 
@@ -322,7 +327,6 @@ def write_maandstaat_sheet(ws, m: Maandstaat) -> None:
             "Datum",
             "Dag",
             "Omschrijving",
-            "Route",
             "Km-stand vertrek",
             "Km-stand aankomst",
             "Gereden km",
@@ -334,7 +338,7 @@ def write_maandstaat_sheet(ws, m: Maandstaat) -> None:
     row = head
     for r in m.rows:
         row += 1
-        values = [r.date, WEEKDAYS[r.date.weekday()], r.description, r.routes]
+        values = [r.date, WEEKDAYS[r.date.weekday()], r.description]
         values += [r.odometer_from, r.odometer_to]
         if r.business_km or r.driven_km:
             values += [r.driven_km, r.business_km, r.private_km]
@@ -349,13 +353,13 @@ def write_maandstaat_sheet(ws, m: Maandstaat) -> None:
 
     row += 2
     ws.cell(row, 3, "Totaal zakelijk km").font = BOLD
-    ws.cell(row, 8, m.business_km).font = BOLD
+    ws.cell(row, 7, m.business_km).font = BOLD
     row += 1
     ws.cell(row, 3, "Te declareren").font = BOLD
-    amount = ws.cell(row, 8, _euros(m.amount_cents))
+    amount = ws.cell(row, 7, _euros(m.amount_cents))
     amount.font, amount.number_format = BOLD, EURO
     if not m.vehicle.reimbursable:
-        ws.cell(row, 10, "voertuig van de BV: geen km-vergoeding")
+        ws.cell(row, 9, "voertuig van de BV: geen km-vergoeding")
 
     if m.open_confirmations:
         row += 2
@@ -365,9 +369,9 @@ def write_maandstaat_sheet(ws, m: Maandstaat) -> None:
             row += 1
             ws.cell(row, 1, r.date).number_format = "DD-MM-YYYY"
             ws.cell(row, 3, r.description)
-            ws.cell(row, 8, r.business_km)
-            ws.cell(row, 10, r.remark)
-    _widths(ws, [12, 5, 40, 22, 15, 17, 11, 11, 9, 40])
+            ws.cell(row, 7, r.business_km)
+            ws.cell(row, 9, r.remark)
+    _widths(ws, [12, 5, 40, 15, 17, 11, 11, 9, 40])
     ws.freeze_panes = ws.cell(head + 1, 1)
 
 
@@ -394,7 +398,7 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
             "Vertrokken na",
             "Aangekomen",
             "Rit",
-            "Route",
+            "Uitleg",
             "Km-stand vertrek",
             "Km-stand aankomst",
             "Gereden km",
@@ -412,7 +416,7 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
             _hhmm(t.departed_after),
             _hhmm(t.arrived_at),
             t.description,
-            t.route,
+            t.explanation,
             t.odometer_from,
             t.odometer_to,
             t.driven_km,
@@ -433,7 +437,7 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
         (11, sum(t.private_km for t in m.trips)),
     ]:
         ws.cell(row, col, value).font = BOLD
-    _widths(ws, [12, 5, 13, 12, 30, 14, 15, 17, 11, 11, 9, 40])
+    _widths(ws, [12, 5, 13, 12, 30, 50, 15, 17, 11, 11, 9, 40])
     ws.freeze_panes = ws.cell(head + 1, 1)
 
 

@@ -189,6 +189,9 @@ class Leg:
     segment_id: str | None = None  # id of the first leg of the segment (ONTWERP §7.2)
     question: str | None = None  # classify.Question value while an answer is possible
     business_if_confirmed: Decimal | None = None
+    reason: str | None = None  # classify.Reason value: why the segment got its outcome
+    expected_km: int | None = None  # E between the segment's business places (§7.2)
+    crow_km: int | None = None  # straight-line km between them
     # odometer (km) when parked before departure and after arrival; None for manual legs
     odometer_from: int | None = None
     odometer_to: int | None = None
@@ -198,6 +201,17 @@ class Leg:
     def imported(self) -> bool:
         """Read from an older database's spreadsheet import (see LegSource._missing_)."""
         return self.source is LegSource.MANUAL and "#excel#" in self.id
+
+
+@dataclass(frozen=True)
+class SentReport:
+    """What the monthly mail said, to notice a statement that changed after it was sent."""
+
+    year: int
+    month: int
+    sent_at: datetime
+    business_km: int
+    amount_cents: int
 
 
 @dataclass(frozen=True)

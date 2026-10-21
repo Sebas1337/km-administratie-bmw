@@ -9,7 +9,7 @@ import pytest
 from kmlog.aws import web as web_handler
 from kmlog.derive import AMSTERDAM
 from kmlog.geocode import GeocodeError, Place
-from kmlog.model import LegSource, LegStatus, LocationType, Observation
+from kmlog.model import LegSource, LegStatus, LocationType, Observation, SentReport
 from kmlog.process import rederive
 from kmlog.store.sqlite import SqliteStore
 from kmlog.version import VERSION
@@ -166,10 +166,10 @@ def test_post_without_valid_csrf_or_from_other_origin_is_rejected(env):
     assert app(evil)["statusCode"] == 403
     opaque = event("POST", "/instellingen/locatie", good, cookie, origin="null")
     assert app(opaque)["statusCode"] == 403
-    assert len(store.locations()) == 2
+    assert len(store.locations()) == 3
     ok = event("POST", "/instellingen/locatie", good, cookie, origin=f"https://{HOST}")
     assert app(ok)["statusCode"] == 303
-    assert len(store.locations()) == 3
+    assert len(store.locations()) == 4
 
 
 def test_logout_clears_cookie(env):
@@ -298,11 +298,11 @@ def test_day_page_correction_and_manual_trip(env):
     assert app(event("POST", "/rit/verwijder", form, cookie))["statusCode"] == 400
 
 
-def test_save_unknown_stop_as_business_location(env):
-    app, store, mails, _ = env
+def _day_c_in_store(store):
+    day = date(2026, 10, 8)
     store.put_observations(
         observations(
-            date(2026, 10, 8),
+            day,
             [
                 ("00:00", "07:30", "home", 41_000),
                 ("08:30", "16:30", "client", 41_071),
@@ -312,28 +312,86 @@ def test_save_unknown_stop_as_business_location(env):
         )
     )
     rederive(store, "car", datetime(2026, 10, 8, 21, 30, tzinfo=UTC))
+    return day
+
+
+def test_save_unknown_place_as_client(env):
+    app, store, mails, clock = env
+    day = _day_c_in_store(store)
     cookie = login(app, mails)
-    day = date(2026, 10, 8)
-    seg = store.legs("car", day, day)[1].segment_id
+    page = app(event("GET", f"/dag/{day}", cookie=cookie))["body"]
+    assert "Plek opslaan als klant, zakelijk of privé" in page
+    assert "Tussenstop: zakelijk telt de verwachte 70 km" in page
+    leg = store.legs("car", day, day)[1]  # client -> unknown
     form = {
         "csrf": csrf(app, cookie),
-        "segment": seg,
-        "lat": str(UNKNOWN[0]),
-        "lon": str(UNKNOWN[1]),
+        "leg": leg.id,
+        "date": day.isoformat(),
         "name": "Kantoor Amsterdam",
-        "type": "business",
+        "type": "client",
         "next": f"/dag/{day}",
     }
-    assert app(event("POST", "/stop", form, cookie))["statusCode"] == 303
+    clock.now = datetime(2026, 11, 3, 12, tzinfo=UTC)  # after the monthly mail: still recomputed
+    assert app(event("POST", "/plek", form, cookie))["statusCode"] == 303
     loc = next(loc for loc in store.locations() if loc.name == "Kantoor Amsterdam")
-    assert loc.type is LocationType.BUSINESS
+    assert loc.type is LocationType.CLIENT
     legs = store.legs("car", day, day)
-    assert int(sum(leg.business_km for leg in legs)) == 160
-    assert all(leg.status is LegStatus.AUTO for leg in legs)  # routes created: rule 1
-    assert {r.distance_km for r in store.routes() if loc.id in (r.location_a, r.location_b)} == {
-        38,
-        51,
-    }
+    assert int(sum(leg.business_km for leg in legs)) == 160  # two plausible first trips
+    assert all(leg.status is LegStatus.AUTO for leg in legs)
+    assert store.routes() == []
+    form["leg"] = legs[0].id  # home -> client: not an unknown place
+    assert app(event("POST", "/plek", form, cookie))["statusCode"] == 400
+
+
+def test_settings_page_shows_learned_distances(env):
+    app, store, mails, _ = env
+    cookie = login(app, mails)
+    body = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "Afstanden" in body and "Klant ↔ Thuis" in body
+    assert "70 km" in body and "standaardroute" not in body
+    form = {"csrf": csrf(app, cookie)}
+    assert app(event("POST", "/instellingen/route", form, cookie))["statusCode"] == 404
+
+
+def test_weekend_trip_toch_zakelijk(env):
+    app, store, mails, clock = env
+    saturday = date(2026, 10, 10)
+    trip = [
+        ("00:00", "07:30", "home", 41_000),
+        ("08:30", "16:30", "client", 41_070),
+        ("17:45", "23:00", "home", 41_140),
+    ]
+    store.put_observations(observations(saturday, trip))
+    clock.now = datetime(2026, 10, 10, 21, 30, tzinfo=UTC)
+    rederive(store, "car", clock.now)
+    cookie = login(app, mails)
+    page = app(event("GET", f"/dag/{saturday}", cookie=cookie))["body"]
+    assert page.count("Toch zakelijk</button>") == 2
+    assert "Privé: zaterdag. Toch zakelijk? Dan telt 70 km." in page
+    seg = store.legs("car", saturday, saturday)[0].segment_id
+    form = {"csrf": csrf(app, cookie), "segment": seg, "answer": "confirm", "next": "/"}
+    assert app(event("POST", "/antwoord", form, cookie))["statusCode"] == 303
+    assert [int(leg.business_km) for leg in store.legs("car", saturday, saturday)] == [70, 0]
+    month = app(event("GET", "/maand/2026-10", cookie=cookie))["body"]
+    assert "Weekendritten naar klanten" in month  # the trip back still counts as private
+
+
+def test_month_page_review_lists_and_resend(env):
+    app, store, mails, clock = env
+    resent = []
+    app.resend_report = lambda y, m: resent.append((y, m))
+    day = _day_c_in_store(store)
+    cookie = login(app, mails)
+    body = app(event("GET", "/maand/2026-10", cookie=cookie))["body"]
+    assert "Onbekende plekken" in body and f"/dag/{day}" in body
+    assert "Gewijzigd na verzending" not in body
+    store.put_sent_report("car", SentReport(2026, 10, clock.now, 10, 250))
+    body = app(event("GET", "/maand/2026-10", cookie=cookie))["body"]
+    assert "Gewijzigd na verzending" in body
+    form = {"csrf": csrf(app, cookie)}
+    resp = app(event("POST", "/maand/2026-10/mail", form, cookie))
+    assert resp["statusCode"] == 303 and resent == [(2026, 10)]
+    assert app(event("POST", "/maand/2026-09/mail", form, cookie))["statusCode"] == 400
 
 
 def test_year_page_stamdata_page_and_xlsx(env):
@@ -343,26 +401,10 @@ def test_year_page_stamdata_page_and_xlsx(env):
     body = app(event("GET", "/jaar/2026", cookie=cookie))["body"]
     assert "Jaaroverzicht 2026" in body and "september" in body
     body = app(event("GET", "/instellingen", cookie=cookie))["body"]
-    assert "Thuis" in body and "A4" in body
+    assert "Thuis" in body
     resp = app(event("GET", "/maand/2026-09.xlsx", cookie=cookie))
     assert resp["isBase64Encoded"] and "attachment" in resp["headers"]["Content-Disposition"]
     assert app(event("GET", "/nope", cookie=cookie))["statusCode"] == 404
-
-
-def test_route_save_keeps_one_default(env):
-    app, store, mails, _ = env
-    cookie = login(app, mails)
-    form = {
-        "csrf": csrf(app, cookie),
-        "from": "home",
-        "to": "client",
-        "name": "A12",
-        "km": "75",
-        "default": "1",
-    }
-    assert app(event("POST", "/instellingen/route", form, cookie))["statusCode"] == 303
-    defaults = [r.name for r in store.routes() if r.is_default]
-    assert defaults == ["A12"]
 
 
 def test_lambda_handler_logs_without_query(env, capsys):

@@ -13,7 +13,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Protocol
 
-from ..model import DayNote, Leg, LegSource, Location, Observation, Rate, Route, Settings, Vehicle
+from ..model import (
+    DayNote,
+    Leg,
+    LegSource,
+    Location,
+    Observation,
+    Rate,
+    Route,
+    SentReport,
+    Settings,
+    Vehicle,
+)
 
 
 class Store(Protocol):
@@ -66,6 +77,10 @@ class Store(Protocol):
     ) -> None: ...
     def delete_override(self, vehicle: str, leg_id: str) -> None: ...
     def overrides(self, vehicle: str) -> dict[str, tuple[Decimal, str | None]]: ...
+
+    # monthly mail: what was sent per month (ONTWERP §9, "Opnieuw mailen")
+    def put_sent_report(self, vehicle: str, report: SentReport) -> None: ...
+    def sent_report(self, vehicle: str, year: int, month: int) -> SentReport | None: ...
 
     # notify job: which questions / days were already mailed
     def mark_notified(self, vehicle: str, keys: Iterable[str], at: datetime) -> None: ...

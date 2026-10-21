@@ -68,7 +68,7 @@
 </div>
 
 <h2>Locaties</h2>
-<p class="muted">Na een wijziging in locaties of routes worden de ritten van de afgelopen maand opnieuw berekend.</p>
+<p class="muted">Na een wijziging in de locaties worden de ritten van de afgelopen maand opnieuw berekend. Een plek waar je bent geweest sla je op vanaf de dagpagina.</p>
 {% for loc in locations %}
 <details class="card">
   <summary><strong>{{ loc.name }}</strong> <span class="muted">— {{ LOCATION_TYPES[loc.type.value] }}, straal {{ loc.radius_m }} m</span>
@@ -84,7 +84,7 @@
   </form>
   <form method="post" action="/instellingen/locatie/verwijder">
     <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ loc.id }}">
-    <button class="danger">Locatie (en haar routes) verwijderen</button>
+    <button class="danger">Locatie verwijderen</button>
   </form>
 </details>
 {% endfor %}
@@ -108,36 +108,18 @@
   </form>
 </details>
 
-<h2>Routes</h2>
-<p class="muted">Enkele reis; een rit binnen ±5 km van een route telt volledig. De standaardroute is de conservatieve default bij een onbekende omweg.</p>
-{% for r in routes %}
-<details class="card">
-  <summary><strong>{{ names.get(r.location_a, r.location_a) }} ↔ {{ names.get(r.location_b, r.location_b) }}</strong>: {{ r.name }}, {{ r.distance_km }} km{% if r.is_default %} <span class="badge">standaard</span>{% endif %}</summary>
-  <form method="post" action="/instellingen/route" class="grid">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ r.id }}">
-    <input type="hidden" name="from" value="{{ r.location_a }}"><input type="hidden" name="to" value="{{ r.location_b }}">
-    <div><label>Naam</label><input name="name" value="{{ r.name }}" maxlength="60"></div>
-    <div><label>Km</label><input name="km" value="{{ r.distance_km }}" inputmode="numeric" required></div>
-    <div><label><input type="checkbox" name="default" value="1" {% if r.is_default %}checked{% endif %}> standaardroute</label></div>
-    <div><button>Opslaan</button></div>
-  </form>
-  <form method="post" action="/instellingen/route/verwijder">
-    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ r.id }}">
-    <button class="danger">Route verwijderen</button>
-  </form>
-</details>
-{% endfor %}
-{% if locations|length >= 2 %}
-<details class="card"><summary>Route toevoegen</summary>
-  <form method="post" action="/instellingen/route" class="grid">
-    <input type="hidden" name="csrf" value="{{ csrf }}">
-    <div><label>Van</label><select name="from">{% for loc in locations %}<option value="{{ loc.id }}">{{ loc.name }}</option>{% endfor %}</select></div>
-    <div><label>Naar</label><select name="to">{% for loc in locations %}<option value="{{ loc.id }}" {% if loop.index == 2 %}selected{% endif %}>{{ loc.name }}</option>{% endfor %}</select></div>
-    <div><label>Naam</label><input name="name" maxlength="60" placeholder="via A4"></div>
-    <div><label>Km</label><input name="km" inputmode="numeric" required></div>
-    <div><label><input type="checkbox" name="default" value="1"> standaardroute</label></div>
-    <div><button>Toevoegen</button></div>
-  </form>
-</details>
+<h2>Afstanden</h2>
+<p class="muted">Geleerd uit je ritten: de meest voorkomende afstand van de laatste 10 ritten tussen twee plekken (enkele reis). Een rit tot 15% langer telt volledig zakelijk; langer geeft de vraag omweg of privé-stop.</p>
+{% if distances %}
+<div class="card"><table>
+  <thead><tr><th>Tussen</th><th class="n">Verwacht</th><th class="n">Ritten</th></tr></thead>
+  <tbody>
+  {% for a, b, km, n in distances %}
+  <tr><td>{{ names.get(a, a) }} ↔ {{ names.get(b, b) }}</td><td class="n">{{ km }} km</td><td class="n">{{ n }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p class="muted">Nog geen ritten tussen twee bekende plekken. De eerste rit telt als hij aannemelijk is (tot 2× de afstand hemelsbreed).</p>
 {% endif %}
 {% endblock %}

@@ -3,11 +3,11 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from kmlog.model import LegStatus, Route
+from kmlog.model import LegStatus, Location, LocationType
 from kmlog.process import rederive, reprocess
 from kmlog.store.sqlite import SqliteStore
 from test_aws_handlers import seeded
-from test_voorbeelddagen import WORKDAY, normal_day, observations
+from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations
 
 EVENING = datetime(2026, 10, 7, 21, 30, tzinfo=UTC)
 
@@ -43,14 +43,13 @@ def test_day_g_answer_survives_rederive():
     assert business(store.legs("car", WORKDAY, WORKDAY)) == 167
 
 
-def test_day_c_prime_answer_business_survives():
+def test_day_c_prime_place_saved_as_client():
     store = seeded(SqliteStore())
     store.put_observations(observations(WORKDAY, day_c()))
     legs = rederive(store, "car", EVENING)
-    seg = legs[1].segment_id
-    assert {leg.segment_id for leg in legs[1:]} == {seg}
-    assert legs[1].question == "unknown_stop"
-    store.put_answer("car", seg, "business", EVENING)
+    assert {leg.segment_id for leg in legs[1:]} == {legs[1].segment_id}
+    assert legs[1].question is None and business(legs) == 141
+    store.put_location(Location("shop", "Klant 3", LocationType.CLIENT, *UNKNOWN))
     assert business(rederive(store, "car", EVENING)) == 160
 
 
@@ -80,11 +79,11 @@ def test_stale_answer_is_ignored():
     store = seeded(SqliteStore())
     store.put_observations(observations(WORKDAY, normal_day(96)))
     legs = rederive(store, "car", EVENING)
-    store.put_answer("car", legs[1].segment_id, "detour", EVENING)
-    store.put_route(Route("a12", "home", "client", "A12", 96))  # now rule 1, no question
+    store.put_answer("car", legs[1].segment_id, "business", EVENING)  # not an option for rule 2
     legs = rederive(store, "car", EVENING)
-    assert legs[1].question is None and legs[1].status is LegStatus.AUTO
-    assert business(legs) == 167
+    assert legs[1].question == "detour_or_private_stop"
+    assert legs[1].status is LegStatus.NEEDS_CONFIRMATION
+    assert business(legs) == 141
 
 
 def test_weekend_question():

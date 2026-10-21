@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "report" {
   }
   statement {
     sid       = "Data"
-    actions   = ["dynamodb:GetItem", "dynamodb:Query"]
+    actions   = ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:PutItem"] # PutItem: what was mailed
     resources = [aws_dynamodb_table.data.arn]
   }
   statement {
@@ -91,6 +91,13 @@ data "aws_iam_policy_document" "web" {
     sid       = "Mail"
     actions   = ["ses:SendRawEmail"]
     resources = [aws_sesv2_email_identity.report.arn, aws_sesv2_email_identity.domain.arn]
+  }
+  statement {
+    sid     = "ResendReport" # "Opnieuw mailen"; built ARN, a reference would be a cycle
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      "arn:aws:lambda:${var.region}:${local.account_id}:function:kmlog-report",
+    ]
   }
 }
 
@@ -156,8 +163,11 @@ resource "aws_iam_role" "scheduler" {
 
 data "aws_iam_policy_document" "scheduler" {
   statement {
-    actions   = ["lambda:InvokeFunction"]
-    resources = concat([for fn in aws_lambda_function.fn : fn.arn], [aws_lambda_function.notify.arn])
+    actions = ["lambda:InvokeFunction"]
+    resources = concat(
+      [for fn in aws_lambda_function.fn : fn.arn],
+      [aws_lambda_function.notify.arn, aws_lambda_function.report.arn],
+    )
   }
 }
 
