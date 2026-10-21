@@ -310,7 +310,7 @@ def save_rate(store: Store, *, year: int, euros: str) -> Rate:
     try:
         amount = Decimal(euros.strip().replace("€", "").replace(",", "."))
     except InvalidOperation as e:
-        raise ActionError("Ongeldig bedrag; bijv. 0,23.") from e
+        raise ActionError("Ongeldig bedrag; bijv. 0,25.") from e
     cents = amount * 100
     if not (0 < amount < 10) or cents != cents.to_integral_value():
         raise ActionError("Vergoeding per km: tussen € 0,01 en € 9,99, in hele centen.")

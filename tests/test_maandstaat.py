@@ -201,3 +201,30 @@ def test_cli_version(capsys):
     with pytest.raises(SystemExit):
         main(["--version"])
     assert capsys.readouterr().out.strip() == f"kmlog {VERSION}"
+
+
+def test_private_only_days_and_trips_are_left_out():
+    private, _ = _private_day(WORKDAY)  # home -> unknown -> home, 0 km business
+    errand = [  # 3 km home -> home, then a normal client day
+        ("00:00", "06:00", "home", 41_000),
+        ("06:40", "07:30", "home", 41_003),
+        ("08:30", "16:30", "client", 41_074),
+        ("17:45", "23:00", "home", 41_144),
+    ]
+    mixed, _ = run(date(2026, 10, 8), errand)
+    first, _ = run(date(2026, 10, 9), normal_day(31, "client2", out_km=75))  # open question
+    notes = [DayNote("car", WORKDAY, "Motor")]
+    m = build_maandstaat(2026, 10, CAR, RATE, [*private, *mixed, *first], notes, LOCATIONS)
+    assert [(r.date.day, r.description) for r in m.rows] == [
+        (7, "Motor"),  # the private trips are gone, the note stays
+        (8, "Thuis → Thuis → Klant → Thuis"),
+        (9, "Thuis → Klant 2 → Thuis"),
+    ]
+    assert (m.rows[1].driven_km, m.rows[1].private_km) == (144, 3)  # the day is complete
+    assert [t.description for t in m.trips] == [
+        "Thuis → Klant",
+        "Klant → Thuis",
+        "Thuis → Klant 2",  # 0 km until answered, but open
+        "Klant 2 → Thuis",
+    ]
+    assert len(m.unknown_places) == 1  # the review list still has the private day

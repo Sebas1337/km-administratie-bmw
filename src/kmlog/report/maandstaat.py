@@ -5,7 +5,9 @@ remark (note, flags, open confirmation); totals (business km, amount in cents), 
 begin/end of the month (from observations), and the list of open
 confirmations. The day rows are the declaration; `trips` lists the same legs one per row
 (rit) for inspection, with times, odometer and pass-through points. Open confirmations
-already carry their conservative default, so they are counted as-is. `unknown_places` and
+already carry their conservative default, so they are counted as-is. Days and trips that are
+only private (no business km, no open question) are left out; they are on the day page, and
+unknown places and weekend client trips in the review lists. `unknown_places` and
 `weekend_trips` are the review lists of the monthly mail (kmlog.review). The jaaroverzicht shows
 km and amount per month.
 
@@ -154,6 +156,11 @@ def _remarks(legs: list[Leg], day_note: str | None = None) -> tuple[str, bool]:
     return "; ".join(parts), open_
 
 
+def _declared(legs: list[Leg]) -> bool:
+    """Belongs on the statement: business km, or a question that is still open."""
+    return any(leg.business_km or leg.status in OPEN for leg in legs)
+
+
 def _km_label(km: int) -> str:
     return f"{km:,}".replace(",", ".")
 
@@ -188,8 +195,9 @@ def build_maandstaat(
     rows: list[DayRow] = []
     for day in sorted(set(by_day) | set(notes)):
         day_legs = by_day.get(day, [])
-        if not day_legs:
-            rows.append(DayRow(date=day, description=notes[day]))
+        if not _declared(day_legs):  # no trips, or only private ones: the note, if any
+            if day in notes:
+                rows.append(DayRow(date=day, description=notes[day]))
             continue
         remark, open_ = _remarks(day_legs, notes.get(day))
         rows.append(
@@ -214,6 +222,8 @@ def build_maandstaat(
     trips: list[TripRow] = []
     for day in sorted(by_day):
         for leg in by_day[day]:
+            if not _declared([leg]):
+                continue
             remark, open_ = _remarks([leg])
             trips.append(
                 TripRow(
