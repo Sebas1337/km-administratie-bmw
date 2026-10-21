@@ -37,7 +37,6 @@ locals {
     })
     web = merge(local.common_env, {
       REPORT_EMAIL  = var.report_email
-      WEB_DOMAIN    = coalesce(var.web_domain, "")
       WEB_SECRET_ID = aws_secretsmanager_secret.web.name
       SECRET_ID     = aws_secretsmanager_secret.cardata.name # Auto page: link / unlink the car
       QUOTA_LIMIT   = tostring(var.quota_limit)
@@ -48,6 +47,8 @@ locals {
       GEOCODER_COUNTRIES = var.geocoder_countries
       },
       var.geocoder_contact == null ? {} : { GEOCODER_CONTACT = var.geocoder_contact },
+      # own domain behind CloudFront: the one X-Forwarded-Host the app trusts
+      var.web_domain == null ? {} : { WEB_DOMAIN = var.web_domain },
     )
   }
 }
