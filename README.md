@@ -173,9 +173,9 @@ Kan je DNS-provider geen CNAME onder `_domainkey` aanmaken, gebruik dan je eigen
 terraform -chdir=infra output web_url
 ```
 
-Open de URL. Het handigst is als bladwijzer of op je beginscherm. Klik op **Stuur inloglink**:
-de link komt naar `report_email` en werkt één keer, binnen 15 minuten. Je blijft daarna 30
-dagen ingelogd op dat apparaat.
+Open de URL. Het handigst is als bladwijzer of op je beginscherm. Vul je e-mailadres in (het
+adres uit `report_email`) en klik op **Stuur inloglink**: de link komt naar dat adres en werkt
+één keer, binnen 15 minuten. Je blijft daarna 30 dagen ingelogd op dat apparaat.
 
 ### 7. Auto koppelen
 
@@ -257,7 +257,7 @@ Zelf gebouwd vanaf de broncode (zonder release): `./scripts/build_lambda.sh && t
 
 | Symptoom | Oplossing |
 |---|---|
-| Geen inlogmail | SES-verificatie geklikt? Kijk in je spam. Maximaal 5 inlogmails per uur. |
+| Geen inlogmail | Precies het adres van `report_email` ingevuld? (Een ander adres krijgt geen mail, maar wel dezelfde melding.) SES-verificatie geklikt? Kijk in je spam. Maximaal 5 inlogmails per uur. |
 | Mail komt niet aan, bounce "DMARC" | DKIM-records uit stap 5 staan nog niet (goed) in de DNS. |
 | Alarm `kmlog-poller-errors` | Meestal een verlopen BMW-koppeling (bijv. na een nieuw BMW-wachtwoord). **Auto → Ontkoppelen**, dan opnieuw koppelen. |
 | "BMW weigert de aanvraag" bij koppelen | Client ID klopt niet, of de client is niet geabonneerd op *CarData API*. |

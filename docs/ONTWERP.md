@@ -299,8 +299,9 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, instellingen (auto, vergoeding per
   jaar, uitleesvenster, meldingen, locaties en routes), auto (koppelen/ontkoppelen, zie §6).
   Een locatie voeg je toe met coördinaten of via zoeken op adres/bedrijf (zie hieronder).
-- **Inloggen**: één gebruiker, geen wachtwoord. Knop "stuur inloglink" → mail naar het vaste adres
-  (geen invoerveld) met een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
+- **Inloggen**: één gebruiker, geen wachtwoord. E-mailadres invullen + "stuur inloglink" → alleen
+  bij het vaste adres (`report_email`) een mail; elk ander adres krijgt dezelfde pagina "check je
+  mail", geen mail, en telt niet mee voor de limiet. De mail bevat een eenmalige link (256-bit token, alleen de hash opgeslagen, 15 minuten,
   max. 5 mails per uur). De link opent een pagina met een knop; pas die POST verbruikt het token
   (mailscanners die links voorladen kunnen het dus niet opmaken). Daarna een HMAC-ondertekende
   sessiecookie (30 dagen, HttpOnly, Secure, SameSite=Lax), CSRF-token op elk formulier plus
@@ -394,6 +395,7 @@ tijdstempels.
 | 2026-10-13 | "gemist?"-mail (regel 7) uitzetbaar in Instellingen, standaard uit | Elke privérit op een werkdag gaf een mail zonder iets te beantwoorden (ook onder de 20 km van regel 5); de mail moet alleen komen als er iets te doen is. |
 | 2026-10-21 | Versies: git-tag `vX.Y.Z` = code + infra, GitHub Release met `lambda.zip`, `scripts/deploy.sh` installeert of zet terug | Bijwerken en terugzetten naar een bekende versie moet één commando zijn, met exact het geteste bestand. Geen aparte testomgeving: de auto is maar door één installatie uit te lezen (tokens roteren, quotum 50/dag). |
 | 2026-10-21 | Opgeslagen gegevens alleen uitbreiden (geen velden hernoemen of verwijderen, geen nieuwe enum-waarden zonder vermelding) | Terugzetten moet de gegevens van een nieuwere versie kunnen lezen. Ritten worden elk uur opnieuw berekend, dus alleen antwoorden, correcties en stamdata blijven staan. |
+| 2026-10-21 | Inlogpagina vraagt het e-mailadres; alleen `report_email` krijgt een link en alleen die telt mee voor de limiet | Een eigen domein staat in de certificate-transparency-logs; bots vonden de site en vroegen inloglinks aan. Met één knop kon iedereen de eigenaar mailen en met 5 aanvragen per uur buitensluiten. |
 
 ## 12. Bronnen
 

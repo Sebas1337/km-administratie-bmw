@@ -1,8 +1,11 @@
 """Single-user login for the web UI: magic link by e-mail + HMAC-signed session cookie.
 
-- The login page has one button; the link always goes to REPORT_EMAIL (no address input), at
-  most LOGIN_MAILS_PER_HOUR per hour. The token is random (256 bit), stored only as its SHA-256
-  hash with a 15-minute expiry, and consumed atomically: it works once.
+- The login page asks for the e-mail address. Only REPORT_EMAIL gets a link, at most
+  LOGIN_MAILS_PER_HOUR per hour; any other input gets the same "check your mail" page, no mail,
+  and does not count towards that limit. So bots that find the site (e.g. an own domain in the
+  certificate transparency logs) can neither spam the owner nor lock them out.
+- The token is random (256 bit), stored only as its SHA-256 hash with a 15-minute expiry, and
+  consumed atomically: it works once.
 - Opening the link shows a page with a button; only that POST consumes the token, so mail
   scanners that prefetch links cannot burn it.
 - Session cookie: base64url(json{sid, exp}) + "." + HMAC-SHA256, 30 days, HttpOnly, Secure,
@@ -37,6 +40,10 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
+def _email_digest(email: str) -> bytes:
+    return hashlib.sha256(email.strip().casefold().encode()).digest()
+
+
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -48,16 +55,23 @@ class Session:
 
 
 class Auth:
-    def __init__(self, key: bytes, store: Store) -> None:
+    def __init__(self, key: bytes, store: Store, login_email: str) -> None:
         if len(key) < 32:
             raise ValueError("session signing key must be at least 32 bytes")
+        if "@" not in login_email:
+            raise ValueError("login e-mail address missing")
         self.key = key
         self.store = store
+        self._login_email = _email_digest(login_email)
 
     def _sign(self, payload: str) -> str:
         return _b64(hmac.new(self.key, payload.encode(), hashlib.sha256).digest())
 
     # --- magic link -----------------------------------------------------------------------
+
+    def is_login_email(self, email: str) -> bool:
+        """The one address that may log in; case-insensitive, compared in constant time."""
+        return hmac.compare_digest(_email_digest(email), self._login_email)
 
     def may_send_login_mail(self, now: datetime) -> bool:
         hour = now.strftime("%Y%m%d%H")

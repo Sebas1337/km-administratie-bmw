@@ -10,7 +10,7 @@ from kmlog.store.sqlite import SqliteStore
 from kmlog.web.app import WebApp
 from kmlog.web.auth import Auth
 from test_cardata import NOW, FakeSession, MemoryStore, Resp
-from test_web import EVENING, KEY, csrf, event, login
+from test_web import EMAIL, EVENING, KEY, csrf, event, login
 
 env = test_web.env  # fixture
 
@@ -113,7 +113,7 @@ def test_auto_page_link_flow(monkeypatch):
     session = FakeSession(routes)
     monkeypatch.setattr(cardata.time, "time", lambda: NOW)
     app = WebApp(
-        store, Auth(KEY, store), "car", lambda s, b: mails.append((s, b)),
+        store, Auth(KEY, store, EMAIL), "car", lambda s, b: mails.append((s, b)),
         now=lambda: EVENING,
         cardata=lambda: CarDataClient(
             tokens, session=session, clock=lambda: NOW,
