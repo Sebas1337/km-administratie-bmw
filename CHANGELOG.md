@@ -7,6 +7,8 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-21
+
 ### Beveiliging
 - Inloggen vraagt je e-mailadres. Alleen het adres van de installatie (`report_email`) krijgt een
   inloglink en alleen die aanvragen tellen mee voor de limiet van 5 per uur. Bots die de site
@@ -31,6 +33,7 @@ Eerste versie, zoals live sinds 10 oktober 2026 (stand van PR #2).
 - Maandstaat en jaaroverzicht als Excel, maandelijks per mail; dagelijkse melding van open vragen.
 - "gemist?"-mail als instelling, standaard uit.
 
-[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Sebas1337/km-administratie-bmw/releases/tag/v0.1.0
