@@ -205,6 +205,25 @@ def test_new_year_uses_the_last_rate():
     assert rate_for(store, 2024) is None
 
 
+def test_without_any_rate_2026_and_later_use_25_cents(env):
+    from kmlog.model import Rate
+    from kmlog.report.service import rate_for
+
+    app, store, mails, _ = env
+    store.delete_rate(2026)
+    assert store.rates() == []
+    assert rate_for(store, 2026) == Rate(2026, 25)
+    assert rate_for(store, 2027) == Rate(2027, 25)
+    assert rate_for(store, 2025) is None
+    store.put_rate(Rate(2025, 23))  # an earlier rate wins over the default
+    assert rate_for(store, 2026) == Rate(2026, 23)
+    store.delete_rate(2025)
+    cookie = login(app, mails)
+    body = app(event("GET", "/instellingen", cookie=cookie))["body"]
+    assert "€ 0,25 (standaard)" in body and 'name="euros" value="0,25"' in body
+    assert "Nog geen tarief" not in body
+
+
 def test_secret_without_value_means_not_linked():
     class Client:
         class exceptions:

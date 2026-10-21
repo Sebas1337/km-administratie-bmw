@@ -31,7 +31,8 @@ en op de 1e van de maand komt de maandstaat in je mail.
   je een vergeten zakelijke rit alsnog meetelt (plek opslaan als klant, of "Toch zakelijk").
   Dagen waarop je de auto niet gebruikt, staan ook niet op de maandstaat.
 - **Maandstaat en jaaroverzicht** als Excel, met per dag gereden, zakelijke en
-  privé-kilometers en de kilometerstand, en per rit een korte uitleg. Het tarief per km stel je per jaar in.
+  privé-kilometers en de kilometerstand, en per rit een korte uitleg. Dagen met alleen
+  privéritten staan er niet op. Het tarief per km stel je per jaar in.
 - **Webinterface** voor telefoon en desktop: maand-, dag- en jaaroverzicht, kaartjes van
   elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), instellingen, en
   het koppelen van de auto. Inloggen gaat zonder wachtwoord, met een link per mail.
@@ -204,7 +205,8 @@ Ga naar **Instellingen**:
 
 - **Auto**: naam en kenteken. Die komen in de kop van de maandstaat.
 - **Vergoeding per km**: per kalenderjaar. De maanden van een jaar gebruiken het tarief van dat
-  jaar; heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar. Je kunt
+  jaar; heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar (zonder
+  enig tarief: € 0,25 vanaf 2026). Je kunt
   dus meerdere jaren vastleggen, en een nieuw jaar hoef je alleen toe te voegen als het tarief
   verandert. Een wijziging werkt direct door in de overzichten en in elke Excel die je daarna
   maakt. Verandert een maandstaat nadat hij gemaild is, dan zie je dat op de maandpagina, met de

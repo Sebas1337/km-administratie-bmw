@@ -204,7 +204,8 @@ Stamdata (TOML, zie `data/samples/stamdata.example.toml`, of via de webinterface
 - `[vehicle]`: naam en kenteken voor de kop van de maandstaat. Het voertuig-id is `car`
   (instelbaar met `kmlog --vehicle` / Terraform `vehicle_id`).
 - `Location` (type `home` | `client` | `business` | `private`).
-- `Rate` per jaar in centen per km.
+- `Rate` per jaar in centen per km. Een jaar zonder tarief gebruikt het laatste eerdere; is er geen
+  enkel tarief, dan geldt vanaf 2026 25 cent (de onbelaste maximumvergoeding van 2026).
 
 Routes worden niet meer ingevuld (sinds v0.3.0): de app leert de afstanden uit de ritten.
 
@@ -297,9 +298,11 @@ Tijd: opgeslagen in UTC, getoond in `Europe/Amsterdam`.
 ## 9. Uitvoer en bevestigingsflow
 
 **Maandstaat** (.xlsx): voertuig, maand, tarief; per dag: datum, omschrijving (bijv.
-"Thuis → Klant → Thuis"), route(s), gereden/zakelijke/privé km, opmerking/vlag; totaal km, bedrag;
+"Thuis → Klant → Thuis"), gereden/zakelijke/privé km, opmerking/vlag; totaal km, bedrag;
 kilometerstand begin en einde maand; lijst van openstaande bevestigingen (die tellen conservatief
-mee). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
+mee). Dagen en ritten die alleen privé zijn (geen zakelijke km, geen open vraag) staan er niet op:
+die staan op de dagpagina, en als onbekende plek of weekendrit naar een klant in de lijsten van de
+maandmail. Een dag met een zakelijke rit telt wel al zijn km (ook een privéritje die dag). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
 
 **Maandmail**: bedrag, jaartotaal, openstaande bevestigingen, en twee lijsten om gemiste zakelijke
 ritten te vinden (elk met een link naar de dagpagina, geen coördinaten in de mail):
@@ -451,6 +454,8 @@ tijdstempels.
 | 2026-10-21 | Onbekende plek = privé zonder vraag, ook op werkdagen (regel 4 vervalt, regel 5 zonder vraag); overzicht in de maandmail; elke plek achteraf opslaan als klant/zakelijk/privé | Vragen over privéritten zijn ruis. Een gemiste zakelijke rit vang je op via de maandmail; eenmalige privéplekken hoeven niet opgeslagen te worden. |
 | 2026-10-21 | Weekend en feestdag altijd privé zonder vraag, ook bij een klant; knop *Toch zakelijk*; vangnet in de maandmail | Voorheen telde een weekendrit naar een klant zakelijk tot je *Privé* zei; een klant in een winkelcentrum gaf elk weekend een vraag en bij een gemiste vraag een onterechte declaratie. |
 | 2026-10-21 | Maandstaat die na verzending wijzigt: melding op de maandpagina + *Opnieuw mailen* | Een plek uit de maandmail opslaan verandert de vorige maand; de BV moet de gecorrigeerde staat krijgen. |
+| 2026-10-21 | Privédagen en -ritten niet op de maandstaat (Excel en maandpagina); de lijsten in de maandmail blijven | De maandstaat is voor de BV: alleen wat gedeclareerd wordt of nog open staat. De lijsten blijven het vangnet voor een vergeten zakelijke rit. |
+| 2026-10-21 | Zonder ingesteld tarief vanaf 2026 € 0,25 per km | Een nieuwe installatie maakt meteen een maandstaat; € 0,25 is de onbelaste maximumvergoeding van 2026. |
 
 ## 12. Bronnen
 

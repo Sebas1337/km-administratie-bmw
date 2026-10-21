@@ -7,6 +7,11 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+### Gewijzigd
+- Dagen en ritten die alleen privé zijn, staan niet meer op de maandstaat (Excel en
+  maandpagina). Ze staan op de dagpagina; de lijsten in de maandmail blijven.
+- Zonder ingesteld tarief geldt vanaf 2026 € 0,25 per km; het formulier stelt € 0,25 voor.
+
 ## [0.3.0] - 2026-10-21
 
 ### Gewijzigd

@@ -14,7 +14,7 @@
 </div>
 
 <h2>Vergoeding per km</h2>
-<p class="muted">Per kalenderjaar: de maanden van een jaar gebruiken het tarief van dat jaar. Heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar. Een wijziging werkt direct door in de maand- en jaaroverzichten en in elke Excel die je daarna maakt; al verstuurde maandstaten worden niet opnieuw gemaild. De kilometers veranderen niet.</p>
+<p class="muted">Per kalenderjaar: de maanden van een jaar gebruiken het tarief van dat jaar. Heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar; is er helemaal geen tarief, dan vanaf 2026 € 0,25. Een wijziging werkt direct door in de maand- en jaaroverzichten en in elke Excel die je daarna maakt; een al verstuurde maandstaat mail je opnieuw vanaf de maandpagina. De kilometers veranderen niet.</p>
 <div class="card">
   <div class="scroll"><table>
     <thead><tr><th>Jaar</th><th>Per km</th><th></th></tr></thead>
@@ -32,15 +32,15 @@
     </tr>
     {% endfor %}
     {% if current_rate and current_rate.year not in rate_years %}
-    <tr class="muted"><td>{{ this_year }}</td><td colspan="2">{{ current_rate.cents_per_km|euro }} (van een eerder jaar)</td></tr>
+    <tr class="muted"><td>{{ this_year }}</td><td colspan="2">{{ current_rate.cents_per_km|euro }} ({{ "van een eerder jaar" if rates else "standaard" }})</td></tr>
     {% endif %}
-    {% if not rates %}<tr><td colspan="3" class="muted">Nog geen tarief: zonder tarief kan er geen maandstaat worden gemaakt.</td></tr>{% endif %}
+    {% if not rates and not current_rate %}<tr><td colspan="3" class="muted">Nog geen tarief: zonder tarief kan er geen maandstaat worden gemaakt.</td></tr>{% endif %}
     </tbody>
   </table></div>
   <form method="post" action="/instellingen/tarief" class="grid">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div><label>Jaar toevoegen</label><input name="year" value="{{ next_rate_year }}" inputmode="numeric" required></div>
-    <div><label>Vergoeding per km (€)</label><input name="euros" value="{{ ('%.2f'|format(current_rate.cents_per_km / 100))|replace('.', ',') if current_rate else '0,23' }}" inputmode="decimal" required></div>
+    <div><label>Vergoeding per km (€)</label><input name="euros" value="{{ ('%.2f'|format(current_rate.cents_per_km / 100))|replace('.', ',') if current_rate else '0,25' }}" inputmode="decimal" required></div>
     <div><button>Toevoegen</button></div>
   </form>
 </div>
