@@ -457,6 +457,7 @@ tijdstempels.
 | 2026-10-21 | Maandstaat die na verzending wijzigt: melding op de maandpagina + *Opnieuw mailen* | Een plek uit de maandmail opslaan verandert de vorige maand; de BV moet de gecorrigeerde staat krijgen. |
 | 2026-10-21 | Privédagen en -ritten niet in de Excel; de maandpagina en de lijsten in de maandmail tonen ze wel | De Excel is de declaratie voor de BV: alleen wat gedeclareerd wordt of nog open staat. Op de maandpagina zijn ze de ingang naar de dagpagina (plek opslaan, corrigeren). |
 | 2026-10-21 | Zonder ingesteld tarief vanaf 2026 € 0,25 per km | Een nieuwe installatie maakt meteen een maandstaat; € 0,25 is de onbelaste maximumvergoeding van 2026. |
+| 2026-10-21 | Achter CloudFront: geheime header `X-Origin-Verify`, de app weigert verzoeken zonder; web-Lambda met gereserveerde concurrency 5 | De kale Function URL is dan geen omweg meer, en een vloed verzoeken kost hooguit wat CloudFront-verzoeken in plaats van opschalende Lambdas. Cloudflare als proxy afgewezen: het pakt het verkeer uit (eigen certificaat) en beschermt alleen de route via het domein. |
 
 ## 12. Bronnen
 

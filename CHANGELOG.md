@@ -7,6 +7,14 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-21
+
+### Beveiliging
+- Met een eigen domein weigert de webapp verzoeken die niet via CloudFront komen (geheime header);
+  de kale Function URL geeft dan 403.
+- Kostenplafond: de web-Lambda draait met hooguit 5 uitvoeringen tegelijk
+  (`web_max_concurrency`).
+
 ## [0.4.0] - 2026-10-21
 
 ### Toegevoegd
@@ -75,7 +83,8 @@ Eerste versie, zoals live sinds 10 oktober 2026 (stand van PR #2).
 - Maandstaat en jaaroverzicht als Excel, maandelijks per mail; dagelijkse melding van open vragen.
 - "gemist?"-mail als instelling, standaard uit.
 
-[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Sebas1337/km-administratie-bmw/compare/v0.3.0...v0.3.1

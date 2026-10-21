@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import calendar
+import hmac
 import re
 import tempfile
 from collections.abc import Callable
@@ -274,6 +275,7 @@ class WebApp:
         geocoder: Geocoder | None = None,
         resend_report: Callable[[int, int], None] | None = None,
         public_host: str | None = None,
+        origin_secret: str | None = None,
     ) -> None:
         self.store = store
         self.auth = auth
@@ -285,8 +287,15 @@ class WebApp:
         self.geocoder = geocoder  # None: address search is off, the manual form still works
         self.resend_report = resend_report  # (year, month) -> mail the maandstaat again
         self.public_host = public_host  # own domain behind CloudFront (WEB_DOMAIN), else None
+        # behind CloudFront: the header it adds, so the Function URL cannot be used directly
+        self.origin_secret = origin_secret
 
     def __call__(self, event: dict) -> dict:
+        if self.origin_secret:
+            headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+            sent = headers.get("x-origin-verify", "").encode()
+            if not hmac.compare_digest(sent, self.origin_secret.encode()):
+                return Response(403, "Gebruik het eigen domein van deze installatie.").to_lambda()
         return self.handle(Request.from_event(event, self.public_host)).to_lambda()
 
     # --- dispatch -------------------------------------------------------------------------

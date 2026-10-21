@@ -579,3 +579,18 @@ def test_forwarded_host_trusted_only_for_configured_domain():
     ev = event("GET", "/login")
     ev["headers"]["x-forwarded-host"] = own
     assert Request.from_event(ev).host == HOST  # no WEB_DOMAIN configured: never trusted
+
+
+def test_behind_cloudfront_only_requests_with_the_origin_secret(env):
+    app, *_ = env
+    app.origin_secret = "s3cret"
+    direct = event("GET", "/login")  # e.g. the Function URL called directly
+    assert app(direct)["statusCode"] == 403
+    wrong = event("GET", "/login")
+    wrong["headers"]["x-origin-verify"] = "guess"
+    assert app(wrong)["statusCode"] == 403
+    via_cloudfront = event("GET", "/login")
+    via_cloudfront["headers"]["X-Origin-Verify"] = "s3cret"
+    assert app(via_cloudfront)["statusCode"] == 200
+    app.origin_secret = None  # without an own domain the Function URL is the way in
+    assert app(event("GET", "/login"))["statusCode"] == 200
