@@ -10,6 +10,8 @@ Routes
     GET  /jaar/YYYY               jaaroverzicht
     GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties, routes
                                   (was /stamdata)
+    GET  /instellingen/zoek       adres of bedrijf zoeken (OpenStreetMap) voor een nieuwe locatie
+    GET  /instellingen/nieuw      formulier "locatie toevoegen", voorgevuld met een zoekresultaat
     GET  /auto                    BMW CarData koppelen / ontkoppelen (kmlog.carlink)
     POST /antwoord, /antwoord/herstel, /stop, /correctie, /correctie/herstel, /rit,
          /rit/verwijder, /instellingen/voertuig, /instellingen/tarief,
@@ -40,6 +42,7 @@ from ..actions import ActionError, open_questions
 from ..cardata import CarDataClient, CarDataError, QuotaExceeded
 from ..classify import Answer, Question
 from ..derive import AMSTERDAM, amsterdam_date, match_location
+from ..geocode import GeocodeError, Geocoder
 from ..model import LegSource, LocationType
 from ..process import FLAG_MANUAL, reprocess
 from ..report.maandstaat import (
@@ -263,6 +266,7 @@ class WebApp:
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         cardata: Callable[[], CarDataClient] | None = None,
         quota_limit: int = 40,
+        geocoder: Geocoder | None = None,
     ) -> None:
         self.store = store
         self.auth = auth
@@ -271,6 +275,7 @@ class WebApp:
         self.now = now
         self.cardata = cardata  # None: no Secrets Manager (local use), the Auto page says so
         self.quota_limit = quota_limit  # own daily CarData limit, as QUOTA_LIMIT of the poller
+        self.geocoder = geocoder  # None: address search is off, the manual form still works
 
     def __call__(self, event: dict) -> dict:
         return self.handle(Request.from_event(event)).to_lambda()
@@ -324,6 +329,10 @@ class WebApp:
             return self.year(req, session, int(m.group(1)))
         if path == "/instellingen":
             return self.settings_page(req, session)
+        if path == "/instellingen/zoek":
+            return self.search_page(req, session)
+        if path == "/instellingen/nieuw":
+            return self.new_location_page(req, session)
         if path == "/stamdata":  # old name, kept for bookmarks
             return redirect("/instellingen")
         if path == "/auto":
@@ -669,9 +678,40 @@ class WebApp:
             settings=self.store.settings(),
             quota_limit=self.quota_limit,
             locations=locations,
+            search_enabled=self.geocoder is not None,
             routes=self.store.routes(),
             names={loc.id: loc.name for loc in locations},
             ok=OK_MESSAGES.get(req.query.get("ok", "")),
+        )
+
+    def search_page(self, req: Request, session: Session) -> Response:
+        query = req.query.get("q", "").strip()
+        places, error = [], None
+        if self.geocoder is None:
+            error = "Zoeken is hier niet beschikbaar. Vul de locatie handmatig in."
+        elif query:
+            home = next((x for x in self.store.locations() if x.type is LocationType.HOME), None)
+            try:
+                places = self.geocoder.search(query, (home.lat, home.lon) if home else None)
+            except GeocodeError as e:
+                error = str(e)
+        return self.page("zoeken.html", session, q=query, places=places, error=error)
+
+    def new_location_page(self, req: Request, session: Session) -> Response:
+        try:
+            lat, lon = _float(req.query.get("lat")), _float(req.query.get("lon"))
+            if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                raise ActionError("Ongeldige coördinaten.")
+        except ActionError as e:
+            return self.page("error.html", session, status=400, message=str(e))
+        return self.page(
+            "locatie_nieuw.html",
+            session,
+            name=req.query.get("name", "")[:80],
+            lat=f"{lat:.6f}",
+            lon=f"{lon:.6f}",
+            latlon=(lat, lon),
+            map=static_map(lat, lon, width=480, height=240),
         )
 
     def xlsx(self, session: Session, year: int, month: int) -> Response:
