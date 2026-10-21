@@ -21,6 +21,7 @@ from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations
 
 HOST = "abc123.lambda-url.eu-central-1.on.aws"
 KEY = b"k" * 32
+EMAIL = "jij@example.nl"
 EVENING = datetime(2026, 10, 7, 21, 30, tzinfo=UTC)
 
 
@@ -39,7 +40,8 @@ def env():
     rederive(store, "car", EVENING)
     mails = []
     clock = Clock(EVENING)
-    app = WebApp(store, Auth(KEY, store), "car", lambda s, b: mails.append((s, b)), now=clock)
+    auth = Auth(KEY, store, EMAIL)
+    app = WebApp(store, auth, "car", lambda s, b: mails.append((s, b)), now=clock)
     return app, store, mails, clock
 
 
@@ -63,7 +65,7 @@ def event(method, path, form=None, cookie=None, query=None, origin=None):
 
 def login(app, mails) -> str:
     """Full magic-link flow; returns the session cookie ('name=value')."""
-    app(event("POST", "/login", {"next": "/"}))
+    app(event("POST", "/login", {"email": EMAIL, "next": "/"}))
     link = re.search(r"https://\S+", mails[-1][1]).group(0)
     assert link.startswith(f"https://{HOST}/login/bevestig?")
     query = dict(p.split("=", 1) for p in link.split("?", 1)[1].split("&"))
@@ -99,7 +101,7 @@ def test_magic_link_is_single_use_and_expires(env):
     reuse = app(event("POST", "/login/bevestig", {"t": token}))
     assert reuse["statusCode"] == 400 and not reuse["cookies"]
 
-    app(event("POST", "/login", {}))
+    app(event("POST", "/login", {"email": EMAIL}))
     token = re.search(r"t=([^&\s]+)", mails[-1][1]).group(1)
     clock.now = EVENING + timedelta(minutes=16)
     assert app(event("POST", "/login/bevestig", {"t": token}))["statusCode"] == 400
@@ -108,11 +110,34 @@ def test_magic_link_is_single_use_and_expires(env):
 def test_login_mail_is_rate_limited(env):
     app, store, mails, clock = env
     for _ in range(5):
-        assert app(event("POST", "/login", {}))["statusCode"] == 200
-    assert app(event("POST", "/login", {}))["statusCode"] == 429
+        assert app(event("POST", "/login", {"email": EMAIL}))["statusCode"] == 200
+    assert app(event("POST", "/login", {"email": EMAIL}))["statusCode"] == 429
     assert len(mails) == 5
     clock.now = EVENING + timedelta(hours=1)
-    assert app(event("POST", "/login", {}))["statusCode"] == 200
+    assert app(event("POST", "/login", {"email": EMAIL}))["statusCode"] == 200
+
+
+def test_login_mail_only_for_the_configured_address(env):
+    app, store, mails, clock = env
+    for email in ("", "info@example.nl", "jij@example.nl.evil", "x" * 300):
+        resp = app(event("POST", "/login", {"email": email}))
+        assert resp["statusCode"] == 200 and "Check je mail" in resp["body"]
+    for _ in range(10):  # wrong addresses never use up the hourly limit
+        app(event("POST", "/login", {"email": "bot@example.nl"}))
+    assert mails == []
+    resp = app(event("POST", "/login", {"email": "  JIJ@Example.nl "}))
+    assert resp["statusCode"] == 200 and len(mails) == 1
+
+
+def test_login_page_asks_for_the_address(env):
+    app, *_ = env
+    body = app(event("GET", "/login"))["body"]
+    assert 'name="email"' in body and 'type="email"' in body
+
+
+def test_auth_needs_a_login_address():
+    with pytest.raises(ValueError):
+        Auth(KEY, SqliteStore(), "")
 
 
 def test_tampered_or_expired_cookie_is_rejected(env):
@@ -123,7 +148,7 @@ def test_tampered_or_expired_cookie_is_rejected(env):
     payload, sig = value.split(".")
     forged = f"{name}={payload[:-1]}A.{sig}"
     assert app(event("GET", "/instellingen", cookie=forged))["statusCode"] == 303
-    other_key = Auth(b"x" * 32, store).new_session_cookie(EVENING).split(";")[0]
+    other_key = Auth(b"x" * 32, store, EMAIL).new_session_cookie(EVENING).split(";")[0]
     assert app(event("GET", "/instellingen", cookie=other_key))["statusCode"] == 303
     clock.now = EVENING + timedelta(days=31)
     assert app(event("GET", "/instellingen", cookie=cookie))["statusCode"] == 303

@@ -7,6 +7,11 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+### Beveiliging
+- Inloggen vraagt je e-mailadres. Alleen het adres van de installatie (`report_email`) krijgt een
+  inloglink en alleen die aanvragen tellen mee voor de limiet van 5 per uur. Bots die de site
+  vinden kunnen je zo niet meer mailen of buitensluiten.
+
 ## [0.2.0] - 2026-10-21
 
 ### Toegevoegd

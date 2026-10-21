@@ -56,7 +56,7 @@ def _app():
     quota = int(env("QUOTA_LIMIT", "40"))
     return WebApp(
         store,
-        Auth(key, store),
+        Auth(key, store, address),
         env("VEHICLE_ID", "car"),
         lambda subject, body: send_mail(ses, address, subject, body),
         cardata=lambda: cardata.CarDataClient(tokens, before_api_call=quota_guard(store, quota)),

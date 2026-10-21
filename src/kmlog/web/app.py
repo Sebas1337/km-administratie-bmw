@@ -479,6 +479,9 @@ class WebApp:
         if req.path == "/login" and req.method == "GET":
             return self.page("login.html", None, next=safe_next(req.query.get("next")))
         if req.path == "/login" and req.method == "POST":
+            if not self.auth.is_login_email(req.form.get("email", "")):
+                # same page as for a sent link, but no mail and the hourly limit stays untouched
+                return self.page("login_sent.html", None)
             if not self.auth.may_send_login_mail(now):
                 return self.page(
                     "error.html", None, status=429, message="Te veel inloglinks; probeer later."
