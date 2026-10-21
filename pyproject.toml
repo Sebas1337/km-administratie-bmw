@@ -1,6 +1,6 @@
 [project]
 name = "kmlog"
-version = "0.3.0"
+version = "0.3.1"
 description = "Automatische kilometeradministratie: BMW CarData -> ritten -> maandstaat"
 requires-python = ">=3.12"
 dependencies = [
