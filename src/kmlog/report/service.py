@@ -38,7 +38,6 @@ def maandstaat_from_store(store: Store, vehicle_id: str, year: int, month: int) 
         store.legs(vehicle_id, first, last),
         store.day_notes(vehicle_id, first, last),
         store.locations(),
-        store.routes(),
         store.observations(vehicle_id),
     )
 

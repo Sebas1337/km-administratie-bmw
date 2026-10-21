@@ -26,9 +26,9 @@ from kmlog.store.sqlite import SqliteStore
 from test_stamdata import EXAMPLE
 from test_voorbeelddagen import (
     LOCATIONS,
-    ROUTES,
     WORKDAY,
     _day_c,
+    _private_day,
     normal_day,
     observations,
     run,
@@ -66,7 +66,6 @@ def test_maandstaat_mixes_manual_cardata_and_notes():
         [manual(date(2026, 10, 5), 140), *a_legs, *c_legs, manual(date(2026, 9, 30), 140)],
         [DayNote("car", date(2026, 10, 6), "Motor")],
         LOCATIONS,
-        ROUTES,
         obs,
     )
     assert [(r.date.day, r.description) for r in m.rows] == [
@@ -76,22 +75,22 @@ def test_maandstaat_mixes_manual_cardata_and_notes():
         (8, "Thuis → Klant → onbekend → Thuis"),
     ]
     day7, day8 = m.rows[2], m.rows[3]
-    assert (day7.driven_km, day7.business_km, day7.routes) == (141, 141, "A4")
+    assert (day7.driven_km, day7.business_km) == (141, 141)
     assert (day7.odometer_from, day7.odometer_to) == (40_000, 40_141)
     assert (m.rows[0].odometer_from, m.rows[0].odometer_to) == (None, None)  # manual trip
     assert (day8.driven_km, day8.business_km, day8.private_km) == (160, 141, 19)
-    assert day8.open_confirmation and day8.remark.startswith("te bevestigen")
+    assert not day8.open_confirmation  # rule 3: stop at an unknown place, no question
     assert m.business_km == 140 + 141 + 141
     assert m.amount_cents == 422 * 25
     assert (m.odometer_start, m.odometer_end) == (40_000, 40_141)
-    assert m.open_confirmations == [day8]
+    assert m.open_confirmations == []
 
 
 def test_answer_changes_maandstaat():
-    legs, segments = _day_c()
-    apply_answer(segments[-1], Answer.BUSINESS)
+    legs, segments = run(WORKDAY, normal_day(96))
+    apply_answer(segments[-1], Answer.DETOUR)
     m = build_maandstaat(2026, 10, CAR, RATE, legs, locations=LOCATIONS)
-    assert m.business_km == 160
+    assert m.business_km == 167
     assert m.open_confirmations == []
 
 
@@ -155,16 +154,45 @@ def test_cli_stamdata_and_reports(tmp_path, capsys):
 
 
 def test_trips_one_row_per_leg():
-    legs, _ = _day_c()  # client -> unknown -> home: rule 4, open question
-    m = build_maandstaat(2026, 10, CAR, RATE, legs, locations=LOCATIONS, routes=ROUTES)
+    legs, _ = _day_c()  # client -> unknown -> home: rule 3
+    m = build_maandstaat(2026, 10, CAR, RATE, legs, locations=LOCATIONS)
     assert len(m.rows) == 1 and len(m.trips) == 3
     assert [t.description for t in m.trips] == [
         "Thuis → Klant",
         "Klant → onbekend",
         "onbekend → Thuis",
     ]
-    assert all(t.open_confirmation and t.remark == "te bevestigen" for t in m.trips[1:])
+    assert [t.explanation for t in m.trips] == [
+        "Zakelijk: past bij de verwachte 70 km (t/m 80 km).",
+        *["Tussenstop: zakelijk telt de verwachte 70 km, de rest is privé."] * 2,
+    ]
     assert sum(t.business_km for t in m.trips) == m.business_km
+
+
+def test_open_question_marks_the_trip():
+    legs, _ = run(WORKDAY, normal_day(96))  # rule 2: longer than expected
+    m = build_maandstaat(2026, 10, CAR, RATE, legs, locations=LOCATIONS)
+    assert [t.open_confirmation for t in m.trips] == [False, True]
+    assert m.trips[1].remark == "te bevestigen"
+    assert m.open_confirmations == m.rows
+
+
+def test_review_lists():
+    private, _ = _private_day(WORKDAY)  # home -> unknown 23 -> home 23
+    short, _ = run(  # 8 km there and back: below the 10 km of the list
+        date(2026, 10, 8),
+        [
+            ("00:00", "10:00", "home", 41_000),
+            ("10:40", "14:00", "unknown", 41_004),
+            ("14:40", "23:00", "home", 41_008),
+        ],
+    )
+    weekend, _ = run(date(2026, 10, 10), normal_day(70, out_km=70))  # Saturday at the client
+    m = build_maandstaat(2026, 10, CAR, RATE, [*private, *short, *weekend], locations=LOCATIONS)
+    (place,) = m.unknown_places
+    assert [(v.date, v.km) for v in place.visits] == [(WORKDAY, 46)]
+    assert place.visits[0].departed_after is not None
+    assert [(t.name, t.dates) for t in m.weekend_trips] == [("Klant", [date(2026, 10, 10)])]
 
 
 def test_cli_version(capsys):

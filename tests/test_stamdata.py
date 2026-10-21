@@ -16,10 +16,7 @@ def test_example_file_parses():
         ("home", LocationType.HOME),
         ("client", LocationType.CLIENT),
     ]
-    assert [(r.id, r.distance_km, r.is_default) for r in data.routes] == [
-        ("a4", 70, True),
-        ("ams", 84, False),
-    ]
+    assert data.routes == []  # distances are learned since v0.3.0
     assert data.rates[0].cents_per_km == 25
 
 
@@ -52,7 +49,7 @@ def test_cli_replaces_places(tmp_path, capsys):
     assert [loc.id for loc in store.locations()] == ["home"]
     assert store.routes() == []
     assert store.rate(2026).cents_per_km == 25  # rates are kept
-    assert "2 locaties, 2 routes, 1 tarieven" in capsys.readouterr().out
+    assert "2 locaties, 1 tarieven" in capsys.readouterr().out
 
 
 def test_export_roundtrip_and_same_file_is_allowed(tmp_path, capsys):
@@ -68,5 +65,5 @@ def test_export_roundtrip_and_same_file_is_allowed(tmp_path, capsys):
     exported = stamdata.load(out)
     assert {loc.id for loc in exported.locations} == {"home", "client", "office"}
     assert next(loc for loc in exported.locations if loc.id == "office").name == 'Kantoor "A\'dam"'
-    assert len(exported.routes) == 2 and exported.rates[0].cents_per_km == 25
+    assert exported.routes == [] and exported.rates[0].cents_per_km == 25
     main(["--db", str(db), "stamdata", str(out)])  # export == store: allowed

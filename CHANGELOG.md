@@ -7,6 +7,25 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+### Gewijzigd
+- **Afstanden worden geleerd** in plaats van ingevuld: per paar plekken de meest voorkomende
+  afstand van de laatste 10 aannemelijke ritten. Een rit tot 15% langer telt volledig zakelijk
+  (was ±5 km van een route); de eerste rit naar een nieuwe plek telt als hij aannemelijk is
+  (1×–2× hemelsbreed). Routes invullen kan niet meer; Instellingen toont de geleerde afstanden.
+- **Onbekende plekken zijn privé zonder vraag**, ook op werkdagen. Een tussenstop op een
+  onbekende plek telt als privé-stop (zakelijk = verwachte afstand), zonder vraag.
+- **Weekend en feestdag zijn altijd privé**, ook bij een klant, met de knop *Toch zakelijk* op de
+  dagpagina. Voorheen telde zo'n rit zakelijk tot je *Privé* koos.
+
+### Toegevoegd
+- Op de dagpagina bij elke onbekende plek: *Opslaan als klant / zakelijk / privé*; de ritten
+  vanaf de 1e van de vorige maand worden opnieuw berekend.
+- Maandmail en maandpagina: *Onbekende plekken* (werkdagen, vanaf 10 km) en *Weekendritten naar
+  klanten*, met links naar de dagen.
+- Per rit een korte uitleg (dagpagina, maandpagina per rit, Excel-tabblad "Ritten").
+- Maandpagina: "gewijzigd na verzending" met de knop *Opnieuw mailen*.
+- `kmlog vergelijk VAN TOT`: ritten op een kopie opnieuw indelen en de verschillen tonen.
+
 ## [0.2.1] - 2026-10-21
 
 ### Beveiliging

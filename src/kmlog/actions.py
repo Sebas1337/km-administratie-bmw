@@ -1,7 +1,7 @@
 """User actions from the web UI: answer questions, correct km, manual trips, stamdata.
 
 Every action that changes how CarData legs are classified stores its input separately (answer,
-override, location, route) and then re-derives the affected days from the stored observations,
+override, location) and then re-derives the affected days from the stored observations,
 so the result survives the next hourly poll. No CarData API call is ever made here.
 """
 
@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from .classify import OPTIONS, Answer, Question
-from .derive import distance_m
+from .classify import OPTIONS, Answer, Distances, Question
+from .derive import amsterdam_date
 from .model import (
     Classification,
     Leg,
@@ -25,12 +25,11 @@ from .model import (
     Location,
     LocationType,
     Rate,
-    Route,
     Settings,
     Vehicle,
     VehicleKind,
 )
-from .process import reprocess
+from .process import HISTORY_DAYS, reprocess
 from .store import Store
 
 # a segment id is the id of its first leg: "<vehicle>#YYYYmmddTHHMM" (Amsterdam departure)
@@ -66,12 +65,6 @@ class OpenQuestion:
     @property
     def options(self) -> tuple[Answer, ...]:
         return OPTIONS[self.question]
-
-    @property
-    def unknown_stops(self) -> list[tuple[float, float]]:
-        return [
-            leg.to_latlon for leg in self.legs[:-1] if leg.to_location is None and leg.to_latlon
-        ]
 
 
 def open_questions(legs: list[Leg]) -> list[OpenQuestion]:
@@ -260,113 +253,48 @@ def save_location(
 
 def delete_location(store: Store, id_: str) -> None:
     locations = [loc for loc in store.locations() if loc.id != id_]
-    routes = [r for r in store.routes() if id_ not in (r.location_a, r.location_b)]
+    routes = [r for r in store.routes() if id_ not in (r.location_a, r.location_b)]  # pre-v0.3.0
     store.replace_places(locations, routes)
 
 
-def save_route(
-    store: Store,
-    *,
-    location_a: str,
-    location_b: str,
-    name: str,
-    km: Decimal,
-    is_default: bool,
-    id_: str | None = None,
-) -> Route:
-    ids = {loc.id for loc in store.locations()}
-    if location_a not in ids or location_b not in ids or location_a == location_b:
-        raise ActionError("Kies twee verschillende, bestaande locaties.")
-    if km <= 0:
-        raise ActionError("Een route heeft minstens 1 km.")
-    routes = store.routes()
-    if id_ is None:
-        id_ = _unique_id(
-            slug(f"{location_a}-{location_b}-{name or int(km)}"), {r.id for r in routes}
-        )
-    route = Route(
-        id=id_,
-        location_a=location_a,
-        location_b=location_b,
-        name=name.strip() or f"{int(km)} km",
-        distance_km=int(km),
-        is_default=is_default,
-    )
-    others = [r for r in routes if r.id != id_]
-    if is_default:  # at most one default per pair
-        others = [
-            Route(r.id, r.location_a, r.location_b, r.name, r.distance_km, False)
-            if r.connects(location_a, location_b)
-            else r
-            for r in others
-        ]
-    store.replace_places(store.locations(), [*others, route])
-    return route
+def first_of_previous_month(day: date) -> date:
+    return (day.replace(day=1) - timedelta(days=1)).replace(day=1)
 
 
-def delete_route(store: Store, id_: str) -> None:
-    store.replace_places(store.locations(), [r for r in store.routes() if r.id != id_])
-
-
-def save_stop(
+def save_place(
     store: Store,
     vehicle: str,
-    segment_id: str,
-    stop: tuple[float, float],
+    leg_id: str,
+    day: date,
     name: str,
     type_: str,
     now: datetime,
 ) -> Location:
-    """Answer an unknown-stop question by saving the stop as a location.
+    """Save the unknown place a leg arrived at as a location (ONTWERP §9, "Plek opslaan").
 
-    business: the stop becomes a business location; routes to/from it are created from the
-    km actually driven, so this trip (and later ones) count in full without a question.
-    private: the stop becomes a private location; rule 3 then keeps the standard route.
+    The legs are re-derived from the 1st of the previous month (or the leg's day, if older),
+    so a place from the monthly mail counts too. As a client/business place, trips to it are
+    first trips (rule 1 when plausible) and then form the expected distance; as a private place
+    it only leaves the "onbekende plekken" list.
     """
-    if type_ not in (LocationType.BUSINESS.value, LocationType.PRIVATE.value):
-        raise ActionError("Kies zakelijk of privé.")
-    legs = segment_legs(store, vehicle, segment_id)
-    candidates = [leg.to_latlon for leg in legs[:-1] if leg.to_latlon]
-    if not any(distance_m(*stop, *c) < 1 for c in candidates):
-        raise ActionError("Deze stop hoort niet bij de rit.")
-    loc = save_location(store, name=name, type_=type_, lat=stop[0], lon=stop[1])
-    _reprocess_around(store, vehicle, legs, now)
-    if loc.type is LocationType.BUSINESS:
-        _routes_for_new_location(store, vehicle, legs, loc)
-        _reprocess_around(store, vehicle, legs, now)
-    store.put_answer(
-        vehicle,
-        segment_id,
-        Answer.BUSINESS.value if loc.type is LocationType.BUSINESS else Answer.PRIVATE.value,
-        now,
-    )
-    _reprocess_around(store, vehicle, legs, now)
+    if type_ not in (LocationType.CLIENT, LocationType.BUSINESS, LocationType.PRIVATE):
+        raise ActionError("Kies klant, zakelijk of privé.")
+    leg = _find_leg(store, vehicle, leg_id, day)
+    if leg.source is not LegSource.CARDATA or leg.to_location is not None or not leg.to_latlon:
+        raise ActionError("Deze rit eindigt niet op een onbekende plek.")
+    loc = save_location(store, name=name, type_=type_, lat=leg.to_latlon[0], lon=leg.to_latlon[1])
+    today = amsterdam_date(now)
+    reprocess(store, vehicle, min(leg.date, first_of_previous_month(today)), today, now)
     return loc
 
 
-def _routes_for_new_location(store: Store, vehicle: str, old: list[Leg], loc: Location) -> None:
-    days = [leg.date for leg in old]
-    legs = store.legs(vehicle, min(days), max(days))
-    known = {x.id: x for x in store.locations()}
-    routes = store.routes()
-    for leg in legs:
-        if loc.id not in (leg.from_location, leg.to_location):
-            continue
-        other = leg.to_location if leg.from_location == loc.id else leg.from_location
-        if other is None or other == loc.id or other not in known:
-            continue
-        if any(r.connects(loc.id, other) for r in routes):
-            continue
-        routes.append(
-            save_route(
-                store,
-                location_a=other,
-                location_b=loc.id,
-                name=f"gereden {leg.date:%d-%m-%Y}",
-                km=leg.distance_km,
-                is_default=True,
-            )
-        )
+def learned_distances(store: Store, vehicle: str, today: date) -> list[tuple[str, str, int, int]]:
+    """(a, b, expected km, trips) per pair of business places, as classification sees them now."""
+    locations = {loc.id: loc for loc in store.locations()}
+    distances = Distances(locations)
+    for leg in store.legs(vehicle, today - timedelta(days=HISTORY_DAYS), today):
+        distances.learn(leg)
+    return distances.pairs()
 
 
 def save_vehicle(store: Store, vehicle_id: str, *, name: str, plate: str) -> Vehicle:

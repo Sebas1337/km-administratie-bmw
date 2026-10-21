@@ -8,7 +8,8 @@ identifiers and commit messages are in English. Answer the user in their own lan
 
 Automatic mileage log for business trips with a private BMW. Every hour a Lambda reads the
 odometer and position through the official BMW CarData API, derives trips, classifies them as
-business/private against the user's places and routes, and mails a monthly Excel statement.
+business/private against the user's places and the distances learned from earlier trips, and
+mails a monthly Excel statement.
 Serverless on AWS (Lambda Python 3.12 arm64, DynamoDB, Secrets Manager, S3, SES, EventBridge
 Scheduler), Terraform in `infra/`. Design and every rule with its reason: `docs/ONTWERP.md`
 (§7 = trip derivation and classification, §11 = decision log; add new decisions there).
@@ -51,11 +52,14 @@ come from the tag's section in `CHANGELOG.md`, so that section must exist before
   `version` field in every log line.
 - **Release**: on main, move `[Unreleased]` in `CHANGELOG.md` to `[X.Y.Z] - date`, bump
   `pyproject.toml` (and `uv lock`), commit via a PR, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+- **Before releasing a change to derivation or classification**, compare it with the live data
+  (read only, nothing is written): `uv run kmlog --store dynamodb --vehicle <vehicle_id> vergelijk
+  <from> <to>` lists every trip whose outcome would change.
 - **Downgrades must stay safe**: stored data changes are additive only (new item types or fields,
   never renamed/removed/re-typed; a new enum value such as a location type also counts as a
   break, because the previous version cannot read it), and readers ignore unknown fields
   (`store/codec.py` does). Legs are re-derived every hour,
-  so derivation changes roll back by themselves; answers, overrides, locations, routes and settings
+  so derivation changes roll back by themselves; answers, overrides, locations, settings (and pre-v0.3.0 routes)
   persist and must stay readable by the previous version. If a change can't meet this, say so in
   `CHANGELOG.md` and the decision log.
 

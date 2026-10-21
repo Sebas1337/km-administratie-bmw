@@ -13,7 +13,7 @@ output "secret" {
 output "functions" {
   value = merge(
     { for k, fn in aws_lambda_function.fn : k => fn.function_name },
-    { notify = aws_lambda_function.notify.function_name },
+    { notify = aws_lambda_function.notify.function_name, report = aws_lambda_function.report.function_name },
   )
 }
 

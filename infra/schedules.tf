@@ -29,7 +29,7 @@ resource "aws_scheduler_schedule" "monthly_report" {
   }
 
   target {
-    arn      = aws_lambda_function.fn["report"].arn
+    arn      = aws_lambda_function.report.arn
     role_arn = aws_iam_role.scheduler.arn
     input    = jsonencode({})
     retry_policy {

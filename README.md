@@ -2,7 +2,7 @@
 
 *English summary: km-administratie-bmw reads the odometer and position of your BMW every hour through the
 official BMW CarData API, turns that into trips, classifies them as business or private using
-your own places and routes, and mails you a monthly mileage statement (Excel). It runs
+your own places and the distances it learns between them, and mails you a monthly mileage statement (Excel). It runs
 serverless in your own AWS account for < 1 euro a month. The UI and documents are in Dutch.*
 
 Rijd je zakelijk met je privé-BMW en declareer je de kilometers bij je eigen bv? Dan hoef je
@@ -21,14 +21,17 @@ en op de 1e van de maand komt de maandstaat in je mail.
   [BMW CarData API](https://bmw-cardata.bmwgroup.com/). Geen app op je telefoon, geen
   geofences, geen vaste afstanden.
 - **Zakelijk of privé, automatisch.** Je legt eenmalig je plekken vast (thuis, klant,
-  kantoor) en de routes ertussen. Ritten die daarbij passen tellen zakelijk.
-- **Conservatief bij twijfel.** Bij een omweg of tussenstop telt alleen de standaardroute als
+  kantoor). De afstand ertussen leert km-admin zelf uit je ritten; een rit die daarbij past
+  (tot 15% langer) telt zakelijk. Je eerste rit naar een nieuwe klant telt als hij aannemelijk is.
+- **Conservatief bij twijfel.** Bij een flinke omweg telt alleen de verwachte afstand als
   zakelijk, en de webinterface (en een dagelijkse mail) vraagt je om bevestiging. Eén klik op
   "Omweg (alle km zakelijk)" of "Privé-stop" en het is verwerkt.
-- **Zakelijke ritten in het weekend of op een feestdag** krijgen een vraag. Dagen waarop je de
-  auto niet gebruikt, staan ook niet op de maandstaat.
-- **Maandstaat en jaaroverzicht** als Excel, met per dag de route, gereden, zakelijke en
-  privé-kilometers en de kilometerstand. Het tarief per km stel je per jaar in.
+- **Privé zonder vragen.** Ritten naar een onbekende plek, en alles in het weekend of op een
+  feestdag, tellen als privé. De maandmail noemt die plekken en weekendritten naar klanten, zodat
+  je een vergeten zakelijke rit alsnog meetelt (plek opslaan als klant, of "Toch zakelijk").
+  Dagen waarop je de auto niet gebruikt, staan ook niet op de maandstaat.
+- **Maandstaat en jaaroverzicht** als Excel, met per dag gereden, zakelijke en
+  privé-kilometers en de kilometerstand, en per rit een korte uitleg. Het tarief per km stel je per jaar in.
 - **Webinterface** voor telefoon en desktop: maand-, dag- en jaaroverzicht, kaartjes van
   elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), instellingen, en
   het koppelen van de auto. Inloggen gaat zonder wachtwoord, met een link per mail.
@@ -65,8 +68,9 @@ flowchart LR
    dat daar niet ruim in past.
 2. **Ritten afleiden.** Zolang de kilometerstand gelijk blijft, staat de auto stil. Tussen
    twee stilstanden ligt een rit met precies het verschil in kilometerstand.
-3. **Classificeren.** Ritten worden vergeleken met je bekende routes (±5 km). Wat niet past,
-   wordt een vraag, met een veilige standaard als je niets antwoordt.
+3. **Classificeren.** Ritten tussen je plekken worden vergeleken met de afstand die km-admin uit
+   eerdere ritten heeft geleerd (+15%). Een flinke omweg wordt een vraag, met een veilige
+   standaard als je niets antwoordt.
 4. **Rapporteren.** Op de 1e van de maand gaat de maandstaat als Excel naar je mail en naar
    S3. In december komt het jaaroverzicht mee.
 
@@ -203,17 +207,17 @@ Ga naar **Instellingen**:
   jaar; heeft een jaar geen eigen tarief, dan geldt dat van het laatste eerdere jaar. Je kunt
   dus meerdere jaren vastleggen, en een nieuw jaar hoef je alleen toe te voegen als het tarief
   verandert. Een wijziging werkt direct door in de overzichten en in elke Excel die je daarna
-  maakt; al verstuurde maandstaten worden niet opnieuw gemaild.
+  maakt. Verandert een maandstaat nadat hij gemaild is, dan zie je dat op de maandpagina, met de
+  knop **Opnieuw mailen**.
 - **Uitlezen**: het venster waarin de auto elk uur wordt uitgelezen (standaard 06:00–23:00).
 - **Locaties**: in elk geval **Thuis** en je klant of kantoor, met coördinaten (rechtsklik in
-  Google Maps → kopieer de coördinaten). Een onbekende stop kun je ook later vanuit een vraag
-  als locatie opslaan. Zoek een zakelijk adres of bedrijf op naam of adres (via OpenStreetMap)
-  in plaats van coördinaten over te typen.
-- **Routes**: de afstand (enkele reis) tussen thuis en elke zakelijke locatie, met één
-  standaardroute per paar. Heb je bij file een vaste alternatieve route, voeg die dan ook toe.
-  Zo'n rit telt dan zonder vraag als zakelijk.
+  Google Maps → kopieer de coördinaten), of zoek een adres of bedrijf op naam (via
+  OpenStreetMap). Een plek waar je bent geweest sla je op de dagpagina op als klant, zakelijk of
+  privé; eenmalige privéplekken hoef je niet op te slaan.
+- **Afstanden**: hoef je niet in te vullen. Instellingen toont wat km-admin uit je ritten heeft
+  geleerd: per paar plekken de meest voorkomende afstand van de laatste 10 ritten.
 
-Liever auto, tarieven, locaties en routes in een bestand? Kopieer
+Liever auto, tarieven en locaties in een bestand? Kopieer
 [`data/samples/stamdata.example.toml`](data/samples/stamdata.example.toml) naar
 `data/stamdata.toml` en laad het met `uv run kmlog --store dynamodb stamdata`.
 

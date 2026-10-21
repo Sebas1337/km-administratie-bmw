@@ -1,6 +1,7 @@
-# Voorbeeld-stamdata: auto, locaties (nep-coördinaten) en routes zijn verzonnen. Kopieer naar
+# Voorbeeld-stamdata: auto en locaties (nep-coördinaten) zijn verzonnen. Kopieer naar
 # data/stamdata.toml (gitignored) en vul je eigen gegevens in. Inlezen: uv run kmlog stamdata data/stamdata.toml
-# (of met --store dynamodb in AWS). Daarna kun je locaties en routes ook in de webinterface beheren.
+# (of met --store dynamodb in AWS). Daarna kun je locaties ook in de webinterface beheren.
+# Afstanden tussen locaties vul je niet in: die leert km-admin uit de ritten (ONTWERP §7.2).
 
 # De auto waarvoor je km-vergoeding declareert; komt in de kop van de maandstaat.
 [vehicle]
@@ -22,24 +23,6 @@ name = "Klant"
 type = "client"
 lat = 52.3000
 lon = 4.9000
-
-# Routes gelden in beide richtingen; precies één default per paar: de standaardroute. Een rit die
-# langer is dan elke bekende route levert een vraag op (omweg of privé-stop?); bij geen antwoord
-# telt de standaardroute als zakelijk en de rest als privé.
-[[route]]
-id = "a4"
-from = "home"
-to = "client"
-name = "A4"
-km = 70
-default = true
-
-[[route]]
-id = "ams"
-from = "home"
-to = "client"
-name = "via Amsterdam"
-km = 84
 
 # Vergoeding per km, per kalenderjaar, in centen.
 [[rate]]

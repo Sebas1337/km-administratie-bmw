@@ -6,7 +6,7 @@ from decimal import Decimal
 from kmlog.classify import classify_legs
 from kmlog.derive import AMSTERDAM, PASS_SHORT, derive_episodes, derive_legs
 from kmlog.model import Observation
-from test_voorbeelddagen import CLIENT, HOME, LOCATIONS, ROUTES, UNKNOWN
+from test_voorbeelddagen import CLIENT, HISTORY, HOME, LOCATIONS, UNKNOWN
 
 DAY = date(2026, 10, 12)  # first client day with the live poller
 NEAR_HOME = (HOME.lat + 0.0017, HOME.lon)  # ~190 m, inside the home radius
@@ -43,7 +43,7 @@ def first_client_day(evening: Observation) -> list[Observation]:
 def derive(observations):
     episodes = derive_episodes(observations, LOCATIONS)
     legs = derive_legs(episodes, LOCATIONS)
-    return legs, classify_legs(legs, LOCATIONS, ROUTES)
+    return legs, classify_legs(legs, LOCATIONS, HISTORY)
 
 
 def test_reading_while_driving_does_not_split_the_trip_home():
@@ -64,7 +64,8 @@ def test_stop_of_more_than_ten_minutes_stays_a_stop():
     evening = obs("18:00:27", 23338, "17:45:00", TWO_KM_FROM_HOME)
     legs, segments = derive(first_client_day(evening))
     assert [leg.to_location for leg in legs[-2:]] == [None, "home"]
-    assert segments[-1].question is not None
+    assert (segments[-1].rule, segments[-1].question) == (3, None)  # stop on the way home
+    assert sum(leg.business_km for leg in legs[-2:]) == 70  # expected client -> home
     assert legs[-1].waypoints == []
 
 

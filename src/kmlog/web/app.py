@@ -8,16 +8,15 @@ Routes
     GET  /maand/YYYY-MM.xlsx      maandstaat als Excel
     GET  /dag/YYYY-MM-DD          ritten van één dag: corrigeren, handmatige rit, vragen
     GET  /jaar/YYYY               jaaroverzicht
-    GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties, routes
-                                  (was /stamdata)
+    GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties,
+                                  geleerde afstanden (was /stamdata)
     GET  /instellingen/zoek       adres of bedrijf zoeken (OpenStreetMap) voor een nieuwe locatie
     GET  /instellingen/nieuw      formulier "locatie toevoegen", voorgevuld met een zoekresultaat
     GET  /auto                    BMW CarData koppelen / ontkoppelen (kmlog.carlink)
-    POST /antwoord, /antwoord/herstel, /stop, /correctie, /correctie/herstel, /rit,
-         /rit/verwijder, /instellingen/voertuig, /instellingen/tarief,
+    POST /antwoord, /antwoord/herstel, /plek, /correctie, /correctie/herstel, /rit,
+         /rit/verwijder, /maand/YYYY-MM/mail, /instellingen/voertuig, /instellingen/tarief,
          /instellingen/tarief/verwijder, /instellingen/uitlezen, /instellingen/meldingen,
-         /instellingen/locatie, /instellingen/locatie/verwijder, /instellingen/route,
-         /instellingen/route/verwijder,
+         /instellingen/locatie, /instellingen/locatie/verwijder,
          /auto/koppelen, /auto/bevestigen, /auto/voertuig, /auto/annuleren, /auto/ontkoppelen,
          /uitloggen
     GET  /login, POST /login (mail link), GET+POST /login/bevestig
@@ -40,7 +39,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from .. import actions, carlink
 from ..actions import ActionError, open_questions
 from ..cardata import CarDataClient, CarDataError, QuotaExceeded
-from ..classify import Answer, Question
+from ..classify import Answer, Question, explain
 from ..derive import AMSTERDAM, amsterdam_date, match_location
 from ..geocode import GeocodeError, Geocoder
 from ..model import LegSource, LocationType
@@ -78,18 +77,15 @@ SECURITY_HEADERS = {
 
 ANSWER_LABELS = {
     Answer.DETOUR: "Omweg (alle km zakelijk)",
-    Answer.PRIVATE_STOP: "Privé-stop (standaardroute)",
+    Answer.PRIVATE_STOP: "Privé-stop (verwachte afstand)",
     Answer.BUSINESS: "Zakelijk",
     Answer.PRIVATE: "Privé",
-    Answer.CONFIRM: "Bevestig (zakelijk)",
+    Answer.CONFIRM: "Toch zakelijk",
 }
 QUESTION_TEXT = {
-    Question.DETOUR_OR_PRIVATE_STOP: (
-        "Langer dan elke bekende route: omweg door file of privé-stop?"
-    ),
-    Question.UNKNOWN_STOP: "Tussenstop op een onbekende plek: zakelijk of privé?",
-    Question.BUSINESS_OR_PRIVATE: "Rit zonder bekende zakelijke bestemming: zakelijk of privé?",
-    Question.WEEKEND: "Zakelijke rit in het weekend of op een feestdag: klopt dat?",
+    Question.DETOUR_OR_PRIVATE_STOP: "Langer dan verwacht: omweg door file of privé-stop?",
+    Question.BUSINESS_OR_PRIVATE: "Eerste rit hierheen, langer dan aannemelijk: zakelijk of privé?",
+    Question.WEEKEND: "Weekend of feestdag, telt als privé. Toch zakelijk?",
 }
 LOCATION_TYPES = {
     LocationType.HOME.value: "thuis",
@@ -109,7 +105,8 @@ OK_MESSAGES = {
     "rit": "Rit toegevoegd.",
     "verwijderd": "Verwijderd.",
     "stamdata": "Opgeslagen; de ritten van de afgelopen maand zijn opnieuw berekend.",
-    "stop": "Locatie opgeslagen en de rit opnieuw berekend.",
+    "plek": "Plek opgeslagen; de ritten vanaf vorige maand zijn opnieuw berekend.",
+    "gemaild": "De maandstaat wordt opnieuw gemaild.",
     "opgeslagen": "Opgeslagen.",
     "code": "Bevestig de koppeling op de BMW-pagina en kom dan hier terug.",
     "wacht": "BMW heeft de koppeling nog niet bevestigd. Rond het af op de BMW-pagina en "
@@ -237,6 +234,7 @@ def _environment() -> Environment:
         time=_local_time,
         daytime=lambda ts: f"{_day_label(amsterdam_date(ts))} {_local_time(ts)}" if ts else "?",
         osm=_osm,
+        explain=explain,
         km=lambda v: f"{int(v):,}".replace(",", ".") if v is not None else "",
     )
     env.globals.update(
@@ -269,6 +267,7 @@ class WebApp:
         cardata: Callable[[], CarDataClient] | None = None,
         quota_limit: int = 40,
         geocoder: Geocoder | None = None,
+        resend_report: Callable[[int, int], None] | None = None,
     ) -> None:
         self.store = store
         self.auth = auth
@@ -278,6 +277,7 @@ class WebApp:
         self.cardata = cardata  # None: no Secrets Manager (local use), the Auto page says so
         self.quota_limit = quota_limit  # own daily CarData limit, as QUOTA_LIMIT of the poller
         self.geocoder = geocoder  # None: address search is off, the manual form still works
+        self.resend_report = resend_report  # (year, month) -> mail the maandstaat again
 
     def __call__(self, event: dict) -> dict:
         return self.handle(Request.from_event(event)).to_lambda()
@@ -353,12 +353,25 @@ class WebApp:
             case "/antwoord/herstel":
                 actions.undo_answer(store, v, f.get("segment", ""), now)
                 return redirect(_with_ok(back, "antwoord"))
-            case "/stop":
-                stop = (_float(f.get("lat")), _float(f.get("lon")))
-                actions.save_stop(
-                    store, v, f.get("segment", ""), stop, f.get("name", ""), f.get("type", ""), now
+            case "/plek":
+                actions.save_place(
+                    store,
+                    v,
+                    f.get("leg", ""),
+                    _date(f.get("date")),
+                    f.get("name", ""),
+                    f.get("type", ""),
+                    now,
                 )
-                return redirect(_with_ok(back, "stop"))
+                return redirect(_with_ok(back, "plek"))
+            case path if m := re.fullmatch(r"/maand/(\d{4})-(\d{2})/mail", path):
+                if self.resend_report is None:
+                    raise ActionError("Opnieuw mailen kan alleen in de AWS-omgeving.")
+                year, month = int(m.group(1)), int(m.group(2))
+                if store.sent_report(v, year, month) is None:
+                    raise ActionError("Deze maandstaat is nog niet gemaild.")
+                self.resend_report(year, month)
+                return redirect(_with_ok(f"/maand/{year:04d}-{month:02d}", "gemaild"))
             case "/correctie":
                 actions.correct(
                     store,
@@ -423,20 +436,6 @@ class WebApp:
                 return self._places_changed(now)
             case "/instellingen/locatie/verwijder":
                 actions.delete_location(store, f.get("id", ""))
-                return self._places_changed(now)
-            case "/instellingen/route":
-                actions.save_route(
-                    store,
-                    location_a=f.get("from", ""),
-                    location_b=f.get("to", ""),
-                    name=f.get("name", ""),
-                    km=actions.parse_km(f.get("km", ""), allow_zero=False),
-                    is_default=f.get("default") == "1",
-                    id_=f.get("id") or None,
-                )
-                return self._places_changed(now)
-            case "/instellingen/route/verwijder":
-                actions.delete_route(store, f.get("id", ""))
                 return self._places_changed(now)
         return self.not_found(session)
 
@@ -546,6 +545,12 @@ class WebApp:
         questions = self._recent_questions()
         names = self._names()
         car = self._car_now() if (year, month) == self._this_month() else None
+        sent = self.store.sent_report(self.vehicle, year, month)
+        changed = (
+            sent is not None
+            and m is not None
+            and (sent.business_km, sent.amount_cents) != (m.business_km, m.amount_cents)
+        )
         prev_m = date(year, month, 1) - timedelta(days=1)
         next_m = date(year, month, calendar.monthrange(year, month)[1]) + timedelta(days=1)
         return self.page(
@@ -559,6 +564,8 @@ class WebApp:
             questions=questions,
             open_count=len(questions),
             car=car,
+            sent=sent,
+            changed=changed,
             describe=lambda legs: describe(legs, names),
             per_trip=req.query.get("weergave") == "ritten",
             ok=OK_MESSAGES.get(req.query.get("ok", "")),
@@ -628,6 +635,7 @@ class WebApp:
             questions=questions,
             answered=answered,
             overrides=overrides,
+            WEEKEND=Question.WEEKEND.value,
             FLAG_MANUAL=FLAG_MANUAL,
             CARDATA=LegSource.CARDATA,
             MANUAL=LegSource.MANUAL,
@@ -684,7 +692,9 @@ class WebApp:
             quota_limit=self.quota_limit,
             locations=locations,
             search_enabled=self.geocoder is not None,
-            routes=self.store.routes(),
+            distances=actions.learned_distances(
+                self.store, self.vehicle, amsterdam_date(self.now())
+            ),
             names={loc.id: loc.name for loc in locations},
             ok=OK_MESSAGES.get(req.query.get("ok", "")),
         )
