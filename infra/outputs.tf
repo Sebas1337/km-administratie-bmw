@@ -19,7 +19,23 @@ output "functions" {
 
 output "web_url" {
   description = "Web UI (bookmark it on your phone)."
-  value       = aws_lambda_function_url.web.function_url
+  value       = local.web_url
+}
+
+output "web_domain_dns_records" {
+  description = "Only with web_domain: publish these at the DNS provider (certificate validation first, then the CNAME to CloudFront)."
+  value = var.web_domain == null ? [] : concat(
+    [for o in aws_acm_certificate.web[0].domain_validation_options : {
+      name  = o.resource_record_name
+      type  = o.resource_record_type
+      value = o.resource_record_value
+    }],
+    length(aws_cloudfront_distribution.web) == 0 ? [] : [{
+      name  = var.web_domain
+      type  = "CNAME"
+      value = aws_cloudfront_distribution.web[0].domain_name
+    }],
+  )
 }
 
 output "dkim_dns_records" {

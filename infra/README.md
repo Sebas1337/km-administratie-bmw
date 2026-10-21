@@ -39,6 +39,7 @@ Zie [`variables.tf`](variables.tf); zet ze in `infra/terraform.tfvars` (gitignor
 | `geocoder_url` | `https://nominatim.openstreetmap.org` | server voor het zoeken van adressen en bedrijven; `off` zet zoeken uit |
 | `geocoder_countries` | `nl` | landcodes waarop gezocht wordt, bijv. `nl,be,de` |
 | `geocoder_contact` | de repo-URL | contact-URL in de User-Agent van zoekopdrachten |
+| `web_domain` | — | eigen domein voor de webinterface, zie *Eigen domein* |
 | `dkim_private_key_file` | — | alleen voor Bring Your Own DKIM, zie hieronder |
 
 ## Bijwerken
@@ -96,6 +97,43 @@ Zet in `terraform.tfvars` `dkim_private_key_file = "../data/dkim/kmlog.private.p
 `kmlog._domainkey.<domein>`. Bewaar het sleutelbestand: zonder faalt `terraform plan`. Sleutel
 vervangen: nieuw sleutelpaar, nieuw TXT-record en
 `terraform apply -replace=aws_sesv2_email_identity.domain`.
+
+## Eigen domein
+
+Standaard is de webinterface bereikbaar op de Function URL. Met `web_domain = "km.jouwdomein.nl"`
+komt er een CloudFront-distributie voor, met een ACM-certificaat in `us-east-1` (eis van
+CloudFront). De links in de mails wijzen dan naar je eigen domein. Kosten: vrijwel nul
+(CloudFront valt bij één gebruiker in de gratis laag, het certificaat is gratis).
+
+Nodig:
+
+- **De deployer-policy met de blokken `WebCertificate` en `WebCdn`**: werk de policy
+  `kmlog-deployer` in de console bij met de huidige [`iam/deployer-policy.json`](iam/deployer-policy.json).
+- **Een DNS-provider die CNAME-records met een underscore kan maken** (de certificaatcontrole van
+  AWS heet `_abc….km.jouwdomein.nl`). Cloudflare kan dat; zet bij Cloudflare beide records op
+  *DNS only* (grijze wolk), niet *Proxied*. Strato kan het niet.
+
+Een Function URL luistert alleen op zijn eigen hostnaam, dus CloudFront stuurt de gewenste host mee
+als `X-Forwarded-Host`; de webapp vertrouwt die alleen als hij gelijk is aan `WEB_DOMAIN`. De
+Function URL zelf blijft bereikbaar, maar inloglinks wijzen dan naar je eigen domein. Je domein
+komt in de openbare certificaatlogs; de inlogpagina vraagt daarom je e-mailadres (zie README).
+
+Aanzetten gaat in twee stappen, want CloudFront heeft een uitgegeven certificaat nodig. Zet eerst
+`web_domain` in `terraform.tfvars`; vanaf een versie met deze functie:
+
+```sh
+set -a; . ./.env; set +a
+git checkout vX.Y.Z                                                # de versie die nu draait
+terraform -chdir=infra apply -target=aws_acm_certificate.web      # 1. certificaat aanvragen
+terraform -chdir=infra output web_domain_dns_records              #    validatie-CNAME in de DNS zetten
+git checkout main
+scripts/deploy.sh vX.Y.Z --plan                                    # 2. wacht op uitgifte, maakt CloudFront,
+scripts/deploy.sh vX.Y.Z --apply                                   #    zet de links in de mails om
+terraform -chdir=infra output web_domain_dns_records              # 3. CNAME van je domein naar CloudFront
+```
+
+Na stap 3 kan het een paar minuten duren voor de DNS overal bekend is. Uitzetten: `web_domain`
+weghalen en opnieuw deployen; certificaat en distributie worden dan verwijderd.
 
 ## Adres zoeken
 

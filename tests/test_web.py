@@ -567,3 +567,15 @@ def test_lambda_wiring_of_the_geocoder(monkeypatch):
     assert g.base_url == "https://nominatim.openstreetmap.org" and g.countries == "nl,be"
     assert g.headers["User-Agent"] == "km-admin (https://example.org/km)"
     assert g.allow_request() is True  # first request of this second
+
+
+def test_forwarded_host_trusted_only_for_configured_domain():
+    own = "kmlog.example.nl"
+    for forwarded, expected in ((own, own), ("evil.example", HOST), (None, HOST)):
+        ev = event("GET", "/login")
+        if forwarded:
+            ev["headers"]["x-forwarded-host"] = forwarded
+        assert Request.from_event(ev, own).host == expected
+    ev = event("GET", "/login")
+    ev["headers"]["x-forwarded-host"] = own
+    assert Request.from_event(ev).host == HOST  # no WEB_DOMAIN configured: never trusted

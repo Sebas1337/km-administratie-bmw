@@ -87,3 +87,9 @@ variable "geocoder_contact" {
   type        = string
   default     = null
 }
+
+variable "web_domain" {
+  description = "Custom domain for the web UI (e.g. kmlog.example.com). Needs the ACM + CloudFront rights from infra/iam/deployer-policy.json; see infra/README.md (Eigen domein)."
+  type        = string
+  default     = null
+}

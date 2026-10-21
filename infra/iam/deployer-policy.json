@@ -86,7 +86,9 @@
         "cloudwatch:DescribeAlarms",
         "cloudwatch:GetMetricData",
         "ses:GetAccount",
-        "ses:ListEmailIdentities"
+        "ses:ListEmailIdentities",
+        "acm:ListCertificates",
+        "cloudfront:ListDistributions"
       ],
       "Resource": "*"
     },
@@ -157,6 +159,33 @@
         "budgets:TagResource"
       ],
       "Resource": "arn:aws:budgets::*:budget/kmlog-*"
+    },
+    {
+      "Sid": "WebCertificate",
+      "Effect": "Allow",
+      "Action": [
+        "acm:RequestCertificate",
+        "acm:DescribeCertificate",
+        "acm:DeleteCertificate",
+        "acm:AddTagsToCertificate",
+        "acm:RemoveTagsFromCertificate",
+        "acm:ListTagsForCertificate"
+      ],
+      "Resource": "arn:aws:acm:us-east-1:*:certificate/*"
+    },
+    {
+      "Sid": "WebCdn",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateDistribution",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:DeleteDistribution",
+        "cloudfront:GetDistribution",
+        "cloudfront:TagResource",
+        "cloudfront:UntagResource",
+        "cloudfront:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:cloudfront::*:distribution/*"
     }
   ]
 }

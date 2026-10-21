@@ -135,9 +135,14 @@ class Request:
         return self.headers.get("host", "")
 
     @classmethod
-    def from_event(cls, event: dict) -> Request:
+    def from_event(cls, event: dict, public_host: str | None = None) -> Request:
         http = event.get("requestContext", {}).get("http", {})
         headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+        # Behind CloudFront the Host header is the Function URL's own; the viewer's host arrives as
+        # X-Forwarded-Host. Only the one configured domain is trusted, otherwise anyone calling the
+        # Function URL directly could point the login link in the mail at their own site.
+        if public_host and headers.get("x-forwarded-host") == public_host:
+            headers["host"] = public_host
         cookies = {}
         for c in event.get("cookies") or []:
             name, _, value = c.partition("=")
@@ -268,6 +273,7 @@ class WebApp:
         quota_limit: int = 40,
         geocoder: Geocoder | None = None,
         resend_report: Callable[[int, int], None] | None = None,
+        public_host: str | None = None,
     ) -> None:
         self.store = store
         self.auth = auth
@@ -278,9 +284,10 @@ class WebApp:
         self.quota_limit = quota_limit  # own daily CarData limit, as QUOTA_LIMIT of the poller
         self.geocoder = geocoder  # None: address search is off, the manual form still works
         self.resend_report = resend_report  # (year, month) -> mail the maandstaat again
+        self.public_host = public_host  # own domain behind CloudFront (WEB_DOMAIN), else None
 
     def __call__(self, event: dict) -> dict:
-        return self.handle(Request.from_event(event)).to_lambda()
+        return self.handle(Request.from_event(event, self.public_host)).to_lambda()
 
     # --- dispatch -------------------------------------------------------------------------
 

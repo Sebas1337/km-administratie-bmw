@@ -28,3 +28,12 @@ provider "aws" {
     tags = { project = "kmlog" }
   }
 }
+
+# CloudFront only accepts ACM certificates from us-east-1 (only used when web_domain is set).
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+  default_tags {
+    tags = { project = "kmlog" }
+  }
+}
