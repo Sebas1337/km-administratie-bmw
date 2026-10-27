@@ -38,16 +38,20 @@ class Change:
 def _outcome(leg: Leg | None) -> tuple:
     if leg is None:
         return ()
-    return (leg.distance_km, leg.business_km, leg.status, leg.question)
+    return (leg.date, leg.distance_km, leg.business_km, leg.status, leg.question)
 
 
 def compare(source: Store, vehicle: str, first: date, last: date, now: datetime) -> list[Change]:
     copy = SqliteStore()
     for loc in source.locations():
         copy.put_location(loc)
+    copy.put_settings(source.settings())  # the poll window, for poll gaps
     start = datetime.combine(first - timedelta(days=CONTEXT_DAYS), time(), AMSTERDAM)
     end = datetime.combine(last + timedelta(days=2), time(), AMSTERDAM)
     copy.put_observations(source.observations(vehicle, start=start, end=end))
+    before = source.observation_before(vehicle, start)  # departure before a long poll gap
+    if before is not None:
+        copy.put_observations([before])
     stored = source.legs(vehicle, first - timedelta(days=HISTORY_DAYS), last)
     for source_kind in LegSource:
         legs = [leg for leg in stored if leg.source is source_kind]

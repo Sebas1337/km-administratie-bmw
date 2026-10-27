@@ -48,6 +48,7 @@ class Store(Protocol):
     def observations(
         self, vehicle: str, start: datetime | None = None, end: datetime | None = None
     ) -> list[Observation]: ...
+    def observation_before(self, vehicle: str, before: datetime) -> Observation | None: ...
 
     # legs: replace all legs of one vehicle + source within a date range (idempotent derive/import)
     def replace_legs(

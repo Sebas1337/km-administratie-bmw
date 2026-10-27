@@ -7,7 +7,9 @@ segment too.
 
 The reference for a trip between two business places is the expected distance E, learned from
 earlier plausible trips between them (`Distances`); there are no configured routes any more.
-Unknown places and weekends are private without a question. Conservative default throughout
+Unknown places and weekends are private without a question. A leg across a poll gap (rule 8)
+never asks either: it counts at most the expected distance, and nothing once the user added
+manual trips for the days of the gap. Conservative default throughout
 (R6): an unanswered question never increases the reimbursed amount. Test fixtures: the example
 days in ONTWERP.md §7.3.
 """
@@ -21,7 +23,7 @@ from datetime import date, datetime, timedelta
 from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 
-from .derive import distance_m
+from .derive import AMSTERDAM, FLAG_POLL_GAP, distance_m, gap_days
 from .model import Classification, Leg, LegStatus, Location, LocationType
 
 CONFIRM_TIMEOUT_DAYS = 7
@@ -71,6 +73,8 @@ class Reason(StrEnum):
     NO_BUSINESS_PLACE = "no_business_place"  # rule 5
     SAME_PLACE = "same_place"  # rule 5: starts and ends at the same place
     WEEKEND = "weekend"  # rule 6
+    GAP = "gap"  # rule 8: across a poll gap, longer than E + margin or no E yet
+    GAP_MANUAL = "gap_manual"  # rule 8: the user added manual trips for the days of the gap
 
 
 @dataclass
@@ -176,6 +180,8 @@ class Distances:
 
     def learn(self, leg: Leg) -> None:
         a, b = leg.from_location, leg.to_location
+        if FLAG_POLL_GAP in leg.flags:  # may hide other trips: not a direct trip
+            return
         if self.business_pair(a, b) and self.plausible(a, b, leg.distance_km):
             pair = frozenset((a, b))
             self._trips.setdefault(pair, {})[leg.id] = (_when(leg), int(leg.distance_km))
@@ -247,7 +253,19 @@ def _annotate_reason(legs: list[Leg], expected: int | None = None, crow: Decimal
         leg.crow_km = int(crow.to_integral_value(ROUND_FLOOR)) if crow is not None else None
 
 
-def classify_segment(legs: list[Leg], distances: Distances) -> Segment:
+def classify_segment(
+    legs: list[Leg], distances: Distances, manual_days: frozenset[date] = frozenset()
+) -> Segment:
+    seg = _classify_segment(legs, distances)
+    # rule 8: manual trips on a day of the gap mean the user took over: the leg is private
+    gap_legs = [leg for leg in legs if FLAG_POLL_GAP in leg.flags]
+    if any(d in manual_days for leg in gap_legs for d in gap_days(leg)):
+        seg.rule, seg.reason, seg.question = 8, Reason.GAP_MANUAL, None
+        _spread(legs, Decimal(0), LegStatus.AUTO)
+    return seg
+
+
+def _classify_segment(legs: list[Leg], distances: Distances) -> Segment:
     start, end = legs[0].from_location, legs[-1].to_location
     seg = Segment(legs=legs, rule=0)
     _annotate_reason(legs)
@@ -267,6 +285,11 @@ def classify_segment(legs: list[Leg], distances: Distances) -> Segment:
         if expected is not None and leg.distance_km <= expected + margin(expected):
             seg.rule, seg.reason = 1, Reason.FITS
             _set(leg, leg.distance_km)
+        elif FLAG_POLL_GAP in leg.flags:
+            # rule 8: what else the car did during the gap is unknown; no detour question
+            seg.rule, seg.reason = 8, Reason.GAP
+            floor = crow.to_integral_value(ROUND_FLOOR)
+            _set(leg, Decimal(expected) if expected is not None else floor)
         elif expected is not None:
             seg.rule, seg.reason = 2, Reason.DETOUR
             _set(leg, Decimal(expected), LegStatus.NEEDS_CONFIRMATION)
@@ -313,17 +336,22 @@ def _annotate(seg: Segment) -> None:
 
 
 def classify_legs(
-    legs: list[Leg], locations: Iterable[Location], history: Iterable[Leg] = ()
+    legs: list[Leg],
+    locations: Iterable[Location],
+    history: Iterable[Leg] = (),
+    manual_days: Iterable[date] = (),
 ) -> list[Segment]:
     """Classify `legs` (in time order). `history`: earlier legs (e.g. from the store) to learn
-    the expected distances from; the legs themselves are learned as they go."""
+    the expected distances from; the legs themselves are learned as they go. `manual_days`:
+    days with manual trips (rule 8)."""
+    manual_days = frozenset(manual_days)
     by_id = {loc.id: loc for loc in locations}
     distances = Distances(by_id)
     for leg in history:
         distances.learn(leg)
     segments = []
     for legs_ in split_segments(legs, by_id):
-        seg = classify_segment(legs_, distances)
+        seg = classify_segment(legs_, distances, manual_days)
         _annotate(seg)
         segments.append(seg)
         for leg in legs_:
@@ -375,6 +403,20 @@ _WEEKDAY = ("maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"
 
 def explain(leg: Leg) -> str:
     """One line (Dutch) on why the leg's segment got its outcome; "" for legs without one."""
+    reason = _explain_reason(leg)
+    if FLAG_POLL_GAP in leg.flags and leg.departed_after and leg.arrived_at:
+        gap = f"Geen metingen tussen {moment(leg.departed_after)} en {moment(leg.arrived_at)}."
+        return f"{gap} {reason}".strip()
+    return reason
+
+
+def moment(ts: datetime) -> str:
+    """'vr 23-10 19:00' (Amsterdam)."""
+    local = ts.astimezone(AMSTERDAM)
+    return f"{_WEEKDAY[local.weekday()][:2]} {local:%d-%m %H:%M}"
+
+
+def _explain_reason(leg: Leg) -> str:
     e, crow = leg.expected_km, leg.crow_km
     match leg.reason:
         case Reason.FITS:
@@ -405,10 +447,16 @@ def explain(leg: Leg) -> str:
                 return f"{day.capitalize()}, toch zakelijk."
             km = int(leg.business_if_confirmed or 0)
             return f"Privé: {day}. Toch zakelijk? Dan telt {km} km."
+        case Reason.GAP if e is not None:
+            return f"Zakelijk telt de verwachte {e} km; wat de auto verder reed, is privé."
+        case Reason.GAP:
+            return f"Zakelijk telt hemelsbreed {crow} km; wat de auto verder reed, is privé."
+        case Reason.GAP_MANUAL:
+            return "Privé: je hebt voor deze dagen zelf ritten toegevoegd."
     return ""
 
 
-# --- day-level checks (rules 7 and 8) -------------------------------------------------------
+# --- day-level checks (rule 7) -------------------------------------------------------------
 
 
 def missed_business_days(legs: Iterable[Leg]) -> list[date]:
@@ -419,10 +467,3 @@ def missed_business_days(legs: Iterable[Leg]) -> list[date]:
         driven[leg.date] = driven.get(leg.date, Decimal(0)) + leg.distance_km
         business[leg.date] = business.get(leg.date, Decimal(0)) + leg.business_km
     return sorted(d for d, km in driven.items() if km > 0 and business[d] == 0 and is_workday(d))
-
-
-def day_mismatch(day_delta_km: int, legs_km: Decimal, threshold: float = 0.2) -> bool:
-    """Rule 8: odometer delta of a day deviates > 20% from the sum of its legs."""
-    if day_delta_km == 0:
-        return legs_km != 0
-    return abs(Decimal(day_delta_km) - legs_km) / Decimal(day_delta_km) > Decimal(str(threshold))

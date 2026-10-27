@@ -17,7 +17,7 @@ from kmlog.web.app import Request, WebApp, safe_next
 from kmlog.web.auth import Auth
 from test_aws_handlers import seeded
 from test_maandstaat import manual
-from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations
+from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations, weekend_gap
 
 HOST = "abc123.lambda-url.eu-central-1.on.aws"
 KEY = b"k" * 32
@@ -356,10 +356,11 @@ def test_settings_page_shows_learned_distances(env):
 def test_weekend_trip_toch_zakelijk(env):
     app, store, mails, clock = env
     saturday = date(2026, 10, 10)
+    km = 40_167  # where the fixture's Wednesday ended: no km during the days without polls
     trip = [
-        ("00:00", "07:30", "home", 41_000),
-        ("08:30", "16:30", "client", 41_070),
-        ("17:45", "23:00", "home", 41_140),
+        ("00:00", "07:30", "home", km),
+        ("08:30", "16:30", "client", km + 70),
+        ("17:45", "23:00", "home", km + 140),
     ]
     store.put_observations(observations(saturday, trip))
     clock.now = datetime(2026, 10, 10, 21, 30, tzinfo=UTC)
@@ -430,6 +431,36 @@ def test_request_parses_base64_body():
     ev["body"] = base64.b64encode(ev["body"].encode()).decode()
     ev["isBase64Encoded"] = True
     assert Request.from_event(ev).form == {"a": "1"}
+
+
+def test_day_page_after_a_poll_gap_quick_trips():
+    store = seeded(SqliteStore())
+    store.put_observations(observations(date(2026, 10, 9), weekend_gap()))
+    clock = Clock(datetime(2026, 10, 12, 21, tzinfo=UTC))
+    rederive(store, "car", clock.now)
+    mails = []
+    send = lambda s, b: mails.append((s, b))  # noqa: E731
+    app = WebApp(store, Auth(KEY, store, EMAIL), "car", send, now=clock)
+    cookie = login(app, mails)
+    monday = date(2026, 10, 12)
+    body = app(event("GET", f"/dag/{monday}", cookie=cookie))["body"]
+    assert "Geen metingen tussen vr 09-10 19:00 en ma 12-10 09:22." in body
+    assert "vertrokken na vr 09-10 19:00, aangekomen 09:22" in body
+    # E home <-> client = 70 from the seeded history (the gap leg teaches nothing)
+    assert "Thuis → Klant → Thuis · 140 km</button>" in body
+    assert "Thuis → Klant · 70 km</button>" in body
+
+    form = {"csrf": csrf(app, cookie), "date": str(monday)}
+    one_way = {**form, "description": "Thuis → Klant", "km": "70"}
+    assert app(event("POST", "/rit", one_way, cookie))["statusCode"] == 303
+    legs = store.legs("car", monday, monday)
+    assert sorted(int(leg.business_km) for leg in legs) == [0, 69, 70]  # gap leg: private
+    assert "Let op" not in app(event("GET", f"/dag/{monday}", cookie=cookie))["body"]
+
+    assert app(event("POST", "/rit", one_way, cookie))["statusCode"] == 303  # tapped twice
+    body = app(event("GET", f"/dag/{monday}", cookie=cookie))["body"]
+    assert "Je hebt voor deze dagen 140 km zelf toegevoegd" in body
+    assert "reed in die tijd 93 km" in body
 
 
 def test_day_page_shows_odometer_and_arrival_map_per_trip(env):

@@ -14,24 +14,42 @@ Rules:
 - A Leg spans two consecutive stops; distance = odometer delta.
 - A leg's day is the Amsterdam calendar day on which the car left home for the trip the leg
   belongs to (a trip = legs from one home departure until the next), so a night shift that
-  returns the next morning counts once, on the departure day (§7.3 day F). Legs not preceded
-  by a home departure, or more than a day after it, fall back to their own departure day.
+  returns the next morning counts once, on the departure day (§7.3 day F). That holds only when
+  the car spent the night at a client/business place: after a night elsewhere (an unknown place,
+  a hotel) the next leg starts its own day. Legs not preceded by a home departure, or more than a
+  day after it, fall back to their own departure day.
+- A leg across a poll gap (MIN_GAP_POLLS or more polls inside the poll window without an
+  observation between departure and arrival, e.g. BMW down for a weekend) may hide several
+  trips. It gets FLAG_POLL_GAP and the arrival day: the arrival is the only moment we know.
+  Its id is based on the arrival too, so the date in the id stays near the leg's date.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
-from datetime import date, datetime, timedelta
+from bisect import bisect_left
+from collections.abc import Iterable, Sequence
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from .model import Leg, Location, LocationType, Observation, ParkingEpisode, Waypoint
+from .model import (
+    Leg,
+    Location,
+    LocationType,
+    Observation,
+    ParkingEpisode,
+    Settings,
+    Waypoint,
+)
 
 AMSTERDAM = ZoneInfo("Europe/Amsterdam")
 EARTH_RADIUS_M = 6_371_000
 MIN_STOP = timedelta(minutes=10)
 PASS_SHORT = "short"  # stood still for less than MIN_STOP as far as we know
+MIN_GAP_POLLS = 3  # missed polls between departure and arrival that make a poll gap
+POLL_SLACK = timedelta(minutes=30)  # an observation this close to the hour counts for that poll
+FLAG_POLL_GAP = "poll_gap"
 
 
 def amsterdam_date(ts: datetime) -> date:
@@ -109,11 +127,43 @@ def pass_through_reason(ep: ParkingEpisode) -> str | None:
     return None
 
 
-def derive_legs(episodes: list[ParkingEpisode], locations: Iterable[Location] = ()) -> list[Leg]:
+def missed_polls(
+    polled: Sequence[datetime], start: datetime, end: datetime, settings: Settings
+) -> list[datetime]:
+    """Polls the poller should have made strictly between `start` and `end` (on the hour, inside
+    the poll window) without an observation within POLL_SLACK. `polled` must be sorted."""
+    missed = []
+    t = start.astimezone(UTC).replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    while t < end:
+        if settings.polls_at(t.astimezone(AMSTERDAM).hour):
+            i = bisect_left(polled, t - POLL_SLACK)
+            if i == len(polled) or polled[i] > t + POLL_SLACK:
+                missed.append(t)
+        t += timedelta(hours=1)
+    return missed
+
+
+def gap_days(leg: Leg) -> list[date]:
+    """Amsterdam days a leg across a poll gap may have driven on: departure day .. leg day."""
+    first = amsterdam_date(leg.departed_after) if leg.departed_after else leg.date
+    return [first + timedelta(days=i) for i in range((leg.date - first).days + 1)]
+
+
+def derive_legs(
+    episodes: list[ParkingEpisode],
+    locations: Iterable[Location] = (),
+    polled: Sequence[datetime] | None = None,
+    settings: Settings | None = None,
+) -> list[Leg]:
     """Legs between consecutive stops. Pass-through points become waypoints of the leg they
     lie on; leading ones are skipped and trailing ones (the car is on its way now) wait for
-    the next stop."""
+    the next stop. With `polled` (sorted polled_at of the observations), legs across a poll gap
+    are flagged and dated on their arrival."""
+    locations = list(locations)
     home_ids = {loc.id for loc in locations if loc.type is LocationType.HOME}
+    work_ids = {
+        loc.id for loc in locations if loc.type in (LocationType.CLIENT, LocationType.BUSINESS)
+    }
     stops: list[ParkingEpisode] = []
     between: dict[int, list[Waypoint]] = {}  # index in stops -> waypoints after that stop
     for ep in episodes:
@@ -126,13 +176,27 @@ def derive_legs(episodes: list[ParkingEpisode], locations: Iterable[Location] = 
     legs: list[Leg] = []
     trip_date: date | None = None
     for i, (ep1, ep2) in enumerate(zip(stops, stops[1:], strict=False)):
+        gap = polled is not None and (
+            len(missed_polls(polled, ep1.last_seen, ep2.first_seen, settings or Settings()))
+            >= MIN_GAP_POLLS
+        )
         own_date = amsterdam_date(ep1.last_seen)
-        # a trip spans at most one night; anything longer starts a new day on its own
-        if ep1.location_id in home_ids or trip_date is None or (own_date - trip_date).days > 1:
+        leg_id = f"{ep1.vehicle}#{ep1.last_seen.astimezone(AMSTERDAM):%Y%m%dT%H%M}"
+        if gap:
+            trip_date = amsterdam_date(ep2.first_seen)
+            leg_id = f"{ep1.vehicle}#{ep2.first_seen.astimezone(AMSTERDAM):%Y%m%dT%H%M}-gap"
+        elif ep1.location_id in home_ids or trip_date is None:
+            trip_date = own_date
+        # a trip spans at most one night, spent at a client/business place (night shift); a
+        # night anywhere else, or a longer trip, starts a new day
+        elif own_date != trip_date and (
+            (own_date - trip_date).days > 1
+            or (amsterdam_date(ep1.first_seen) < own_date and ep1.location_id not in work_ids)
+        ):
             trip_date = own_date
         legs.append(
             Leg(
-                id=f"{ep1.vehicle}#{ep1.last_seen.astimezone(AMSTERDAM):%Y%m%dT%H%M}",
+                id=leg_id,
                 vehicle=ep1.vehicle,
                 date=trip_date,
                 distance_km=Decimal(ep2.odometer_km - ep1.odometer_km),
@@ -145,6 +209,7 @@ def derive_legs(episodes: list[ParkingEpisode], locations: Iterable[Location] = 
                 odometer_from=ep1.odometer_km,
                 odometer_to=ep2.odometer_km,
                 waypoints=between.get(i, []),
+                flags=[FLAG_POLL_GAP] if gap else [],
             )
         )
     return legs

@@ -182,6 +182,16 @@ class DynamoDbStore:
             result = [o for o in result if o.polled_at < end]
         return result
 
+    def observation_before(self, vehicle: str, before: datetime) -> Observation | None:
+        items = self._query(
+            _vehicle_pk(vehicle), "OBS#", f"OBS#{_utc(before)}", ScanIndexForward=False, Limit=2
+        )
+        for item in items:  # newest first; between() is inclusive, so skip `before` itself
+            obs = loads(Observation, item["data"])
+            if obs.polled_at < before:
+                return obs
+        return None
+
     # --- legs and day notes ---------------------------------------------------------------
 
     @staticmethod

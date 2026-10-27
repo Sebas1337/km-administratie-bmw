@@ -104,7 +104,7 @@ def _show(leg) -> str:
     if leg is None:
         return "–"
     question = f", vraag {leg.question} ({leg.status.value})" if leg.question else ""
-    return f"{int(leg.business_km)}/{int(leg.distance_km)} km zakelijk{question}"
+    return f"{leg.date:%d-%m} {int(leg.business_km)}/{int(leg.distance_km)} km zakelijk{question}"
 
 
 def cmd_vergelijk(args, store: Store) -> None:
@@ -114,7 +114,7 @@ def cmd_vergelijk(args, store: Store) -> None:
 
     changes = compare(store, args.vehicle, args.first, args.last, datetime.now(UTC))
     for c in changes:
-        print(f"{c.day}  {c.description:28} {_show(c.before):34} → {_show(c.after)}")
+        print(f"{c.day}  {c.description:28} {_show(c.before):40} → {_show(c.after)}")
     delta = sum((c.business_delta for c in changes), 0)
     print(f"{len(changes)} rit(ten) anders; zakelijk {delta:+} km (niets opgeslagen)")
 

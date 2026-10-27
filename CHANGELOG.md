@@ -7,6 +7,26 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
+### Toegevoegd
+- Storing bij BMW: een rit over een gat in de metingen (3 of meer gemiste polls) staat op de
+  aankomstdag, telt hooguit de verwachte afstand zakelijk en geeft geen omwegvraag meer. De
+  dagpagina noemt het gat.
+- Mail bij een storing: op een werkdag waarop BMW 's avonds nog niet bereikbaar is ("reed je
+  vandaag zakelijk?"), en één keer zodra de metingen terug zijn, met de km die de auto in die tijd
+  reed. Geen mail als de auto stilstond.
+- Dagpagina: knoppen om met één tik een handmatige rit toe te voegen met de geleerde afstanden
+  (bijv. *Thuis → Klant → Thuis*). Een handmatige rit op een dag van een gat maakt de rit over het
+  gat privé (geen dubbeltelling), met een waarschuwing bij meer km dan de auto reed.
+
+### Gewijzigd
+- Een rit na een nacht op een onbekende of privéplek (of een hotel) staat op zijn eigen dag; alleen
+  na een nacht bij een klant of zakelijke plek (nachtdienst) hoort hij bij de dag van vertrek.
+- Tijden op een andere dag dan de rit tonen de datum (bijv. "vertrokken na vr 23-10 19:00"), op de
+  dag- en maandpagina en in de Excel.
+- `kmlog vergelijk` neemt het uitleesvenster en de laatste meting vóór de periode mee.
+
 ## [0.4.1] - 2026-10-21
 
 ### Beveiliging

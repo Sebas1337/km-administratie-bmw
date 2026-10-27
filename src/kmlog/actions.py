@@ -15,8 +15,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from .classify import OPTIONS, Answer, Distances, Question
-from .derive import amsterdam_date
+from .classify import OPTIONS, WORK_TYPES, Answer, Distances, Question
+from .derive import FLAG_POLL_GAP, amsterdam_date, gap_days
 from .model import (
     Classification,
     Leg,
@@ -32,8 +32,10 @@ from .model import (
 from .process import HISTORY_DAYS, reprocess
 from .store import Store
 
-# a segment id is the id of its first leg: "<vehicle>#YYYYmmddTHHMM" (Amsterdam departure)
-_SEGMENT_DAY = re.compile(r"#(\d{8})T\d{4}$")
+# a segment id is the id of its first leg: "<vehicle>#YYYYmmddTHHMM" (Amsterdam departure), or
+# "...-gap" with the arrival for a leg across a poll gap (derive.py)
+_SEGMENT_DAY = re.compile(r"#(\d{8})T\d{4}(?:-gap)?$")
+GAP_LOOKAHEAD_DAYS = 31  # a manual trip re-derives legs across a gap dated up to this much later
 
 
 class ActionError(ValueError):
@@ -173,7 +175,13 @@ def undo_correction(store: Store, vehicle: str, leg_id: str, day: date, now: dat
 
 
 def add_manual_trip(
-    store: Store, vehicle: str, day: date, km: Decimal, description: str, note: str | None
+    store: Store,
+    vehicle: str,
+    day: date,
+    km: Decimal,
+    description: str,
+    note: str | None,
+    now: datetime,
 ) -> Leg:
     if km <= 0:
         raise ActionError("Een handmatige rit heeft minstens 1 km.")
@@ -191,14 +199,66 @@ def add_manual_trip(
         source=LegSource.MANUAL,
     )
     store.put_leg(leg)
+    _reprocess_gaps(store, vehicle, day, now)
     return leg
 
 
-def delete_manual_trip(store: Store, vehicle: str, leg_id: str, day: date) -> None:
+def delete_manual_trip(store: Store, vehicle: str, leg_id: str, day: date, now: datetime) -> None:
     leg = _find_leg(store, vehicle, leg_id, day)
     if leg.source is not LegSource.MANUAL or leg.imported:
         raise ActionError("Alleen handmatige ritten kunnen worden verwijderd.")
     store.delete_leg(leg)
+    _reprocess_gaps(store, vehicle, day, now)
+
+
+def gap_legs_covering(store: Store, vehicle: str, day: date) -> list[Leg]:
+    """CarData legs across a poll gap that may have driven on `day` (dated on or after it)."""
+    return [
+        leg
+        for leg in store.legs(vehicle, day, day + timedelta(days=GAP_LOOKAHEAD_DAYS))
+        if FLAG_POLL_GAP in leg.flags and day in gap_days(leg)
+    ]
+
+
+def manual_km_in_gap(store: Store, vehicle: str, leg: Leg) -> int:
+    """Km of the manual trips on the days of a leg across a poll gap (rule 8)."""
+    days = gap_days(leg)
+    return int(
+        sum(
+            m.distance_km
+            for m in store.legs(vehicle, days[0], days[-1])
+            if m.source is LegSource.MANUAL and not m.imported
+        )
+    )
+
+
+QUICK_TRIP_PLACES = 5
+
+
+def quick_trips(store: Store, vehicle: str, today: date) -> list[tuple[str, int]]:
+    """(description, km) for one-tap manual trips: home <-> each client/business place with a
+    learned distance, most visited first; there and back, and one way."""
+    locations = {loc.id: loc for loc in store.locations()}
+    home = next((loc for loc in locations.values() if loc.type is LocationType.HOME), None)
+    if home is None:
+        return []
+    places = []
+    for a, b, km, trips in learned_distances(store, vehicle, today):
+        other = locations.get(b if a == home.id else a)
+        if home.id in (a, b) and other and other.type in WORK_TYPES and km:
+            places.append((-trips, other.name, km))
+    options = []
+    for _, name, km in sorted(places)[:QUICK_TRIP_PLACES]:
+        options.append((f"{home.name} → {name} → {home.name}", 2 * km))
+        options.append((f"{home.name} → {name}", km))
+    return options
+
+
+def _reprocess_gaps(store: Store, vehicle: str, day: date, now: datetime) -> None:
+    """A manual trip on a day of a poll gap takes over from the leg across it (rule 8)."""
+    legs = gap_legs_covering(store, vehicle, day)
+    if legs:
+        _reprocess_around(store, vehicle, legs, now)
 
 
 # --- stamdata -----------------------------------------------------------------------------

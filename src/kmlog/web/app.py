@@ -41,7 +41,7 @@ from .. import actions, carlink
 from ..actions import ActionError, open_questions
 from ..cardata import CarDataClient, CarDataError, QuotaExceeded
 from ..classify import Answer, Question, explain
-from ..derive import AMSTERDAM, amsterdam_date, match_location
+from ..derive import AMSTERDAM, FLAG_POLL_GAP, amsterdam_date, match_location
 from ..geocode import GeocodeError, Geocoder
 from ..model import LegSource, LocationType
 from ..process import FLAG_MANUAL, reprocess
@@ -49,6 +49,7 @@ from ..report.maandstaat import (
     MONTHS,
     WEEKDAYS,
     build_jaaroverzicht,
+    clock,
     describe,
     format_euro,
     write_maandstaat,
@@ -239,6 +240,7 @@ def _environment() -> Environment:
         day=_day_label,
         time=_local_time,
         daytime=lambda ts: f"{_day_label(amsterdam_date(ts))} {_local_time(ts)}" if ts else "?",
+        at=lambda ts, day: clock(ts, day) or "?",
         osm=_osm,
         explain=explain,
         km=lambda v: f"{int(v):,}".replace(",", ".") if v is not None else "",
@@ -411,11 +413,12 @@ class WebApp:
                     actions.parse_km(f.get("km", ""), allow_zero=False),
                     f.get("description", ""),
                     f.get("note", ""),
+                    now,
                 )
                 return redirect(_with_ok(f"/dag/{day}", "rit"))
             case "/rit/verwijder":
                 day = _date(f.get("date"))
-                actions.delete_manual_trip(store, v, f.get("leg", ""), day)
+                actions.delete_manual_trip(store, v, f.get("leg", ""), day, now)
                 return redirect(_with_ok(f"/dag/{day}", "verwijderd"))
             case "/instellingen/voertuig":
                 actions.save_vehicle(store, v, name=f.get("name", ""), plate=f.get("plate", ""))
@@ -633,6 +636,13 @@ class WebApp:
             for sid in segment_ids
             if sid in answers and not any(q.segment_id == sid for q in questions)
         }
+        # rule 8: manual trips for the days of a poll gap beyond what the car drove meanwhile
+        overbooked = {}
+        for leg in legs:
+            if FLAG_POLL_GAP in leg.flags:
+                manual_km = actions.manual_km_in_gap(self.store, self.vehicle, leg)
+                if manual_km > leg.distance_km:
+                    overbooked[leg.id] = manual_km
         return self.page(
             "day.html",
             session,
@@ -651,6 +661,8 @@ class WebApp:
             questions=questions,
             answered=answered,
             overrides=overrides,
+            overbooked=overbooked,
+            quick_trips=actions.quick_trips(self.store, self.vehicle, amsterdam_date(self.now())),
             WEEKEND=Question.WEEKEND.value,
             FLAG_MANUAL=FLAG_MANUAL,
             CARDATA=LegSource.CARDATA,

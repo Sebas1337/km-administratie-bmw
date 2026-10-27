@@ -54,6 +54,7 @@ FLAG_TEXT = {
     "no_route": "geen bekende route",  # before v0.3.0
     "implausible": "eerste rit niet aannemelijk",
     "manual_correction": "handmatig gecorrigeerd",
+    "poll_gap": "metingen ontbraken",
 }
 
 
@@ -386,8 +387,15 @@ def write_maandstaat_sheet(ws, m: Maandstaat) -> None:
     ws.freeze_panes = ws.cell(head + 1, 1)
 
 
-def _hhmm(ts: datetime | None) -> str | None:
-    return ts.astimezone(AMSTERDAM).strftime("%H:%M") if ts else None
+def clock(ts: datetime | None, day: date) -> str | None:
+    """'08:00', or 'di 27-10 08:00' when `ts` is not on `day` (e.g. after a night away or a
+    poll gap), so a time never reads as if it was on the trip's day."""
+    if ts is None:
+        return None
+    local = ts.astimezone(AMSTERDAM)
+    if local.date() == day:
+        return f"{local:%H:%M}"
+    return f"{WEEKDAYS[local.weekday()]} {local:%d-%m %H:%M}"
 
 
 def write_trips_sheet(ws, m: Maandstaat) -> None:
@@ -426,8 +434,8 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
         values = [
             t.date,
             WEEKDAYS[t.date.weekday()],
-            _hhmm(t.departed_after),
-            _hhmm(t.arrived_at),
+            clock(t.departed_after, t.date),
+            clock(t.arrived_at, t.date),
             t.description,
             t.explanation,
             t.odometer_from,
@@ -450,7 +458,7 @@ def write_trips_sheet(ws, m: Maandstaat) -> None:
         (11, sum(t.private_km for t in trips)),
     ]:
         ws.cell(row, col, value).font = BOLD
-    _widths(ws, [12, 5, 13, 12, 30, 50, 15, 17, 11, 11, 9, 40])
+    _widths(ws, [12, 5, 15, 15, 30, 50, 15, 17, 11, 11, 9, 40])
     ws.freeze_panes = ws.cell(head + 1, 1)
 
 
