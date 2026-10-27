@@ -7,6 +7,8 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
 ### Toegevoegd
 - Storing bij BMW: een rit over een gat in de metingen (3 of meer gemiste polls) staat op de
   aankomstdag, telt hooguit de verwachte afstand zakelijk en geeft geen omwegvraag meer. De
