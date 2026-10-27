@@ -34,9 +34,21 @@ def reprocess(store: Store, vehicle: str, first: date, last: date, now: datetime
     history = store.legs(vehicle, first - timedelta(days=HISTORY_DAYS), first - timedelta(days=1))
 
     observations = store.observations(vehicle, start=since, end=until)
+    # the episode the car was parked in, however long ago: after a poll gap of days the
+    # departure lies before `since` (ONTWERP §7.1)
+    before = store.observation_before(vehicle, since)
+    if before is not None:
+        observations.insert(0, before)
     episodes = derive_episodes(observations, locations)
-    legs = derive_legs(episodes, locations)
-    segments = classify_legs(legs, locations, history)
+    polled = [o.polled_at for o in observations]
+    legs = derive_legs(episodes, locations, polled, store.settings())
+    manual_from = amsterdam_date(observations[0].polled_at) if observations else first
+    manual_days = {
+        leg.date
+        for leg in store.legs(vehicle, manual_from, last + timedelta(days=2))
+        if leg.source is LegSource.MANUAL and not leg.imported
+    }
+    segments = classify_legs(legs, locations, history, manual_days)
 
     answers = store.answers(vehicle)
     overrides = store.overrides(vehicle)

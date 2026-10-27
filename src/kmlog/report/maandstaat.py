@@ -54,6 +54,7 @@ FLAG_TEXT = {
     "no_route": "geen bekende route",  # before v0.3.0
     "implausible": "eerste rit niet aannemelijk",
     "manual_correction": "handmatig gecorrigeerd",
+    "poll_gap": "metingen ontbraken",
 }
 
 

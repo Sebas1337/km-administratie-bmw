@@ -14,7 +14,6 @@ from kmlog.classify import (
     Reason,
     apply_answer,
     classify_legs,
-    day_mismatch,
     dutch_holidays,
     easter,
     explain,
@@ -22,7 +21,7 @@ from kmlog.classify import (
     missed_business_days,
     time_out,
 )
-from kmlog.derive import AMSTERDAM, derive_episodes, derive_legs, distance_m
+from kmlog.derive import AMSTERDAM, FLAG_POLL_GAP, derive_episodes, derive_legs, distance_m
 from kmlog.model import Leg, LegStatus, Location, LocationType, Observation
 
 # straight-line: home-client 50 km, home-client2 30.3 km; STOP is 40 km from home and 29.9 km
@@ -92,11 +91,11 @@ def _at(day: date, hhmm: str) -> datetime:
     return datetime(day.year, day.month, day.day, tzinfo=AMSTERDAM) + timedelta(hours=h, minutes=m)
 
 
-def run(day: date, stops, locations=LOCATIONS, history=HISTORY):
+def run(day: date, stops, locations=LOCATIONS, history=HISTORY, manual_days=()):
     obs = observations(day, stops)
     episodes = derive_episodes(obs, locations)
-    legs = derive_legs(episodes, locations)
-    segments = classify_legs(legs, locations, history)
+    legs = derive_legs(episodes, locations, [o.polled_at for o in obs])
+    segments = classify_legs(legs, locations, history, manual_days)
     return legs, segments
 
 
@@ -259,10 +258,76 @@ def test_i_private_day_on_weekend():
     assert missed_business_days(legs) == []
 
 
-def test_j_missed_poll_flags_day():
-    assert day_mismatch(day_delta_km=141, legs_km=Decimal(0))
-    assert not day_mismatch(day_delta_km=141, legs_km=Decimal(141))
-    assert not day_mismatch(day_delta_km=0, legs_km=Decimal(0))
+FRIDAY = date(2026, 10, 9)
+MONDAY = date(2026, 10, 12)
+
+
+def weekend_gap(out_km: int = 93):
+    """No polls from Friday 19:00 (BMW down) until Monday 10:00; meanwhile the car drove
+    privately over the weekend and to the client on Monday morning (arrived 09:22)."""
+    return [
+        ("00:00", "19:00", "home", START_KM),
+        ("81:22", "88:30", "client", START_KM + out_km),
+        ("89:45", "95:00", "home", START_KM + out_km + 69),
+    ]
+
+
+def test_j_poll_gap_over_the_weekend():
+    legs, segments = run(FRIDAY, weekend_gap())
+    gap = legs[0]
+    assert gap.flags == [FLAG_POLL_GAP]
+    assert (gap.date, gap.id) == (MONDAY, "car#20261012T0922-gap")
+    assert (segments[0].rule, segments[0].reason, segments[0].question) == (8, Reason.GAP, None)
+    assert (gap.business_km, gap.private_km, gap.status) == (70, 23, LegStatus.AUTO)
+    assert explain(gap) == (
+        "Geen metingen tussen vr 09-10 19:00 en ma 12-10 09:22. "
+        "Zakelijk telt de verwachte 70 km; wat de auto verder reed, is privé."
+    )
+    assert legs[1].flags == [] and legs[1].expected_km == 70
+    assert business(legs, FRIDAY) == 0
+    assert business(legs, MONDAY) == 139
+
+
+def test_j_poll_gap_that_fits_counts_all_km():
+    legs, segments = run(FRIDAY, weekend_gap(out_km=71))
+    assert (segments[0].reason, legs[0].business_km) == (Reason.FITS, 71)
+    assert explain(legs[0]).startswith("Geen metingen tussen vr 09-10 19:00 en ma 12-10 09:22. ")
+
+
+def test_j_manual_trips_take_over_the_gap():
+    legs, segments = run(FRIDAY, weekend_gap(), manual_days={MONDAY})
+    assert (segments[0].rule, segments[0].reason) == (8, Reason.GAP_MANUAL)
+    assert legs[0].business_km == 0
+    assert explain(legs[0]).endswith("Privé: je hebt voor deze dagen zelf ritten toegevoegd.")
+    assert business(legs) == 69  # the return trip; the user adds Monday morning by hand
+
+
+def test_j_poll_gap_on_workdays_home_to_home():
+    tuesday = date(2026, 10, 6)  # BMW down from Tuesday 08:00 until Thursday 19:00
+    legs, segments = run(tuesday, [("00:00", "07:00", "home", 0), ("66:40", "70:00", "home", 420)])
+    assert [(leg.date, leg.flags, leg.business_km) for leg in legs] == [
+        (date(2026, 10, 8), [FLAG_POLL_GAP], 0)
+    ]
+    assert segments[0].reason == Reason.SAME_PLACE
+
+
+def test_j_gap_without_driving_or_short_gap_while_driving():
+    # no polls 09:00-13:00 at home: same odometer, so no leg at all
+    legs, _ = run(WORKDAY, [("00:00", "08:00", "home", 0), ("13:30", "23:00", "home", 0)])
+    assert legs == []
+    # two missed polls while driving (last poll 07:00, arrived 09:50): an ordinary leg
+    legs, _ = run(WORKDAY, [("00:00", "07:30", "home", 0), ("09:50", "23:00", "client", 70)])
+    assert legs[0].flags == [] and legs[0].date == WORKDAY
+    # three (08, 09 and 10:00, arrived 10:10): a gap
+    legs, _ = run(WORKDAY, [("00:00", "07:30", "home", 0), ("10:10", "23:00", "client", 70)])
+    assert legs[0].flags == [FLAG_POLL_GAP]
+
+
+def test_j_gap_legs_do_not_teach_distances():
+    legs, _ = run(FRIDAY, weekend_gap(out_km=60), history=[])
+    distances = Distances({loc.id: loc for loc in LOCATIONS})
+    distances.learn(legs[0])
+    assert distances.history("home", "client") == []
 
 
 def test_k_first_trip_to_new_client():

@@ -159,7 +159,9 @@ geverifieerd tegen de broncode van drie community-clients (zie §12) en in de pr
 - **Regio**: het voertuig moet aan een EU-markt gekoppeld zijn.
 - **Geen historie**: REST geeft alleen de actuele toestand. Een gemiste poll is niet achteraf op te
   halen; daarom alarms, en daarom het ontwerp met parkeer-episodes (robuust tegen gemiste
-  tussenstops).
+  tussenstops). Ook de velden over de laatste rit (`vehicle.trip.segment.end.time` en
+  `.end.travelledDistance`) geven alleen het eind van de laatste rit, niet het begin: een storing
+  van dagen is er niet mee te reconstrueren (regel 8).
 
 ## 7. Afleiding en regels
 
@@ -189,6 +191,14 @@ geverifieerd tegen de broncode van drie community-clients (zie §12) en in de pr
    de leg bij hoort. Een nachtdienst (heen 2 jul 20:10, terug 3 jul 08:30) telt zo één keer, op 2 jul
    (voorbeeld F). Legs zonder voorafgaand vertrek van huis, of meer dan een dag erna, krijgen hun
    eigen vertrekdag.
+5. **Rit over een gat**: ontbreken tussen vertrek (`departed_after`) en aankomst (`arrived_at`)
+   **3 of meer polls** binnen het uitleesvenster (geen meting binnen 30 minuten van het hele uur,
+   bijv. omdat BMW een weekend lang `502` gaf), dan kan de leg meer ritten verbergen. Hij krijgt de
+   vlag `poll_gap` en als dag de **aankomstdag**: de aankomst is het enige moment dat vaststaat
+   (het vertrek kan overal in het gat liggen). Zijn id volgt de aankomst (`…#<aankomst>-gap`), zodat
+   de datum in het id dicht bij de dag van de leg blijft. Ontbreken er polls terwijl de auto
+   stilstaat, dan verandert de kilometerstand niet en is er geen leg. Omdat het vertrek dagen terug
+   kan liggen, neemt de herberekening altijd de laatste meting vóór het venster mee.
 
 Uurpollen is voldoende omdat elke stop ≥ 1 uur zichtbaar is (nacht thuis, uren bij de klant), en
 kortere stops in de kilometers van de leg zitten.
@@ -232,7 +242,7 @@ Regels, in volgorde:
 | 5 | Geen zakelijk paar: van/naar een onbekende of privéplek, of begin = eind (thuis → … → thuis) | **Privé**, geen vraag. De plek staat in het overzicht *Onbekende plekken* (§9); als klant/zakelijk opslaan maakt de rit alsnog zakelijk. |
 | 6 | Weekend of feestdag, ook bij een klant of zakelijke plek | **Privé**, geen vraag. Op de dagpagina staat bij ritten met een klant/zakelijke plek de knop *Toch zakelijk*: dan geldt regel 1–3 alsof het een werkdag is. Deze ritten staan als vangnet in de maandmail. |
 | 7 | Dag met gereden km maar zonder enkele zakelijke leg, op een werkdag | Informatieve melding "gemist?" (geen vergoeding zonder bevestiging). Alleen per mail als dat in Instellingen aanstaat (standaard uit). |
-| 8 | Kilometerstand-delta van een dag wijkt > 20% af van de som van de legs | Datakwaliteitsvlag (gemiste poll); handmatige controle. |
+| 8 | Rit over een gat in de metingen (§7.1 punt 5) | Past hij bij `E`: regel 1, alle km. Anders zakelijk = `E` (zonder `E`: hemelsbreed), rest privé, **geen omwegvraag**. Zo'n leg telt niet mee voor `E`. Heb je voor een dag van het gat zelf ritten toegevoegd, dan telt de leg als **privé**: jij neemt het gat over. Mail: zie §9. |
 
 Elke rit krijgt een korte **uitleg** van de regel die gold (dagpagina en Excel-tabblad "Ritten"),
 bijvoorbeeld "Zakelijk: 70 km, verwacht 69 ± 10", "Privé: geen klant of zakelijke plek",
@@ -258,7 +268,7 @@ Stamdata voor de voorbeelden (verzonnen): `home`, `client` (hemelsbreed 50 km va
 | G. Onbekende omweg zonder zichtbare stop | 71; client→home 96 | regel 2, vraag; default `E` | **141** (of 167 na *Omweg*) |
 | H. Weekend bij klant | zaterdag 70; 70 | regel 6: privé, geen vraag; in de maandmail | **0** (140 na *Toch zakelijk*) |
 | I. Privé-dag | home→onbekend 23; onbekend→home 23 | regel 5: privé, geen vraag; in *Onbekende plekken* | **0** |
-| J. Gemiste poll | episodes ontbreken, dagdelta 141 maar legs 0 | regel 8, vlag | handmatig |
+| J. Storing over het weekend | geen polls vr 19:00 – ma 10:00; home→client 93 (aankomst ma 09:22); client→home 69 | regel 8 op maandag: zakelijk = `E` 70, 23 privé, geen vraag | **0** op vr, **139** op ma (70 + 69); met een handmatige rit *Thuis → Klant* (70) is de leg over het gat privé: weer **139** |
 | K. Eerste rit naar nieuwe klant | home→client2 41; client2→home 40 | 41 aannemelijk (28–62); daarna `E` = 41, 40 past | **81** |
 | L. Eerste rit, niet aannemelijk | home→client2 75; client2→home 31 | 75 > 62 → regel 2, vraag *Zakelijk*/*Privé*, 0 km; 75 telt niet mee voor `E`, dus 31 is weer een eerste rit: aannemelijk | **31** (106 na *Zakelijk*) |
 | M. Tussenstop zonder geschiedenis | home→onbekend 20 (stop 1 uur); onbekend→client2 25 | regel 3 zonder `E`: zakelijk = hemelsbreed 30 | **30** (van 45) |
@@ -336,6 +346,14 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   met de nieuwe vragen en, als dat in Instellingen aanstaat, "gemist?"-dagen (regel 7) plus een
   link naar de webinterface. Staat het uit, dan worden "gemist?"-dagen stil als verwerkt onthouden
   (aanzetten mailt geen achterstand). Een vraag wordt nooit twee keer gemaild.
+- **Gat in de metingen** (regel 8), in dezelfde mail:
+  - *BMW nog niet bereikbaar*: op een werkdag waarop sinds de laatste meting 3 of meer polls
+    ontbraken, "Reed je vandaag zakelijk? Voeg de rit toe" met een link naar de dagpagina. De km
+    zijn dan nog onbekend. Eén keer per dag; niet als de laatste meting ouder is dan 14 dagen (dan
+    is de auto ontkoppeld, geen storing).
+  - *Metingen terug*: per leg over een gat met een werkdag erin het tijdvak, de gereden km en wat
+    er nu zakelijk telt, met een link naar de dagpagina. Was de storing dezelfde dag voorbij en
+    stond de auto stil, dan is er geen leg en dus geen mail.
 - **Webinterface** = Lambda `kmlog-web` achter een **Function URL**, server-side HTML, geen
   JavaScript, mobiel eerst. Pagina's: maand (ritten per dag of per rit, totaal, bedrag,
   Excel-download, openstaande vragen met één-tik-knoppen, laatste positie van de auto), dag (legs met
@@ -369,7 +387,10 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
   autocomplete), met een limiet van 1 verzoek/s (teller in de store), een cache in het geheugen van
   de Lambda, voorkeur voor resultaten rond thuis (`viewbox`, niet beperkend) en zonder
   bushaltes/straten (`category=highway`). Bij een storing blijft het handmatige formulier.
-- **Handmatige rit**: via de dagpagina, voor als de auto geen data gaf.
+- **Handmatige rit**: via de dagpagina, voor als de auto geen data gaf. Knoppen voor één tik met de
+  geleerde afstanden: per klant/zakelijke plek (de 5 meest bezochte) *Thuis → Klant → Thuis* (2 ×
+  `E`) en *Thuis → Klant* (`E`). Een handmatige rit op een dag van een gat maakt de leg over dat gat
+  privé (regel 8); de dagpagina waarschuwt als je voor die dagen meer km toevoegt dan de auto reed.
 - **Stamdata**: na bewerken in de webinterface is de database de bron. `kmlog stamdata --export`
   schrijft de database naar TOML; `kmlog stamdata` (import) weigert een afwijkende database te
   overschrijven zonder `--force`.
@@ -397,6 +418,11 @@ Gezien met een BMW i4 via REST:
   rit op de dagpagina, of zet de locatie met een kleine straal op de ingang van het kantoor.
 - Door het uurpollen is een leg niet altijd één echte rit (bijv. boodschap + vertrek = 3 km
   thuis → thuis); daarom "vertrokken na" in plaats van een vertrektijd.
+- Is BMW langer onbereikbaar (gezien: 502 van vrijdagavond tot maandagochtend), dan is niet te
+  zien wat de auto in die tijd deed. Regel 8 telt hooguit de verwachte afstand op de aankomstdag;
+  een storing over meerdere werkdagen vang je alleen op door zelf ritten toe te voegen (de mail
+  vraagt erom). De dag van de leg kan dan afwijken van de echte ritdag. Na een wekenlange storing
+  plaatst de aankomstdag de leg mogelijk in een maand die al gemaild is: "gewijzigd na verzending".
 
 Andere modellen kunnen anders melden; de afleiding gebruikt alleen kilometerstand, positie en
 tijdstempels.
@@ -457,6 +483,9 @@ tijdstempels.
 | 2026-10-21 | Maandstaat die na verzending wijzigt: melding op de maandpagina + *Opnieuw mailen* | Een plek uit de maandmail opslaan verandert de vorige maand; de BV moet de gecorrigeerde staat krijgen. |
 | 2026-10-21 | Privédagen en -ritten niet in de Excel; de maandpagina en de lijsten in de maandmail tonen ze wel | De Excel is de declaratie voor de BV: alleen wat gedeclareerd wordt of nog open staat. Op de maandpagina zijn ze de ingang naar de dagpagina (plek opslaan, corrigeren). |
 | 2026-10-21 | Zonder ingesteld tarief vanaf 2026 € 0,25 per km | Een nieuwe installatie maakt meteen een maandstaat; € 0,25 is de onbelaste maximumvergoeding van 2026. |
+| 2026-10-27 | Rit over een gat (3+ gemiste polls tussen vertrek en aankomst): aankomstdag, zakelijk hooguit `E`, geen vraag; telt niet mee voor `E` | Een BMW-storing van vr 19:00 tot ma 10:00 gaf één leg thuis → klant van 93 km op vrijdag met een omwegvraag: verkeerde dag, en *Omweg* zou 24 km privé declareren. De aankomst is het enige vaste moment. De oude regel 8 (dagdelta vs legs) was nooit gebouwd en zag dit niet: de leg overbrugt het gat. Een tweede bron (CarPlay-opdracht op de telefoon) bewust niet. |
+| 2026-10-27 | Bij een gat: mail op de avond zelf als BMW nog niet bereikbaar is (werkdag, 3+ gemiste polls), en één mail met de km zodra de metingen terug zijn; geen mail als de km-stand gelijk bleef | Alleen wie reed weet wat zakelijk was, en dat liefst dezelfde dag. Zonder verandering in de km-stand is er niets te melden. |
+| 2026-10-27 | Handmatige rit op een dag van een gat = jij neemt het gat over: de leg erover telt als privé | Anders telt de rit dubbel (handmatig + `E` op de leg). Km aftrekken van de leg is lastiger uit te leggen en levert in geen geval meer op. Waarschuwing als de handmatige km de gereden km overschrijden. |
 | 2026-10-21 | Achter CloudFront: geheime header `X-Origin-Verify`, de app weigert verzoeken zonder; web-Lambda met gereserveerde concurrency 5 | De kale Function URL is dan geen omweg meer, en een vloed verzoeken kost hooguit wat CloudFront-verzoeken in plaats van opschalende Lambdas. Cloudflare als proxy afgewezen: het pakt het verkeer uit (eigen certificaat) en beschermt alleen de route via het domein. |
 
 ## 12. Bronnen

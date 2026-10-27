@@ -24,6 +24,7 @@
   <div>{{ leg.distance_km|km }} km gereden{% if leg.odometer_from is not none %} (km-stand {{ leg.odometer_from|km }} → {{ leg.odometer_to|km }}){% endif %} · <strong>{{ leg.business_km|km }} km zakelijk</strong>{% if leg.private_km %} · {{ leg.private_km|km }} km privé{% endif %}
     {% if STATUS_TEXT[leg.status.value] %} · <span class="badge">{{ STATUS_TEXT[leg.status.value] }}</span>{% endif %}</div>
   {% if leg.source == CARDATA and leg|explain %}<div class="muted">{{ leg|explain }}</div>{% endif %}
+  {% if leg.id in overbooked %}<div><span class="badge">Let op</span> Je hebt voor deze dagen {{ overbooked[leg.id] }} km zelf toegevoegd, maar de auto reed in die tijd {{ leg.distance_km|km }} km.</div>{% endif %}
   {% if leg.note and leg.source == CARDATA %}<div class="muted">{{ leg.note }}</div>{% endif %}
   {% if leg.id in arrival_maps %}{{ static_map(arrival_maps[leg.id], leg.to_latlon) }}{% endif %}
   {% if leg.question == WEEKEND and leg.segment_id == leg.id and leg.segment_id not in answered %}
@@ -91,7 +92,19 @@
 {% else %}<p class="muted">Geen metingen op deze dag.</p>{% endif %}
 
 <h2>Handmatige rit toevoegen</h2>
-<p class="muted">Voor als de auto geen gegevens gaf. Telt volledig zakelijk.</p>
+<p class="muted">Voor als de auto geen gegevens gaf, bijvoorbeeld omdat BMW niet bereikbaar was. Telt volledig zakelijk.</p>
+{% if quick_trips %}
+<div class="buttons">
+  {% for description, km in quick_trips %}
+  <form class="inline" method="post" action="/rit">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="date" value="{{ day.isoformat() }}">
+    <input type="hidden" name="description" value="{{ description }}"><input type="hidden" name="km" value="{{ km }}">
+    <button class="secondary">{{ description }} · {{ km }} km</button>
+  </form>
+  {% endfor %}
+</div>
+<p class="muted small">Met de afstanden die de app uit je ritten heeft geleerd. Een andere rit vul je hieronder in.</p>
+{% endif %}
 <form method="post" action="/rit" class="card grid">
   <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="date" value="{{ day.isoformat() }}">
   <div><label>Omschrijving</label><input name="description" required maxlength="120" placeholder="Thuis → Klant → Thuis"></div>

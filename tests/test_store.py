@@ -65,6 +65,10 @@ def test_observations_are_idempotent_and_ordered(store):
     assert got[0].polled_at.tzinfo is not None
     window = store.observations("car", start=T0 + timedelta(hours=1), end=T0 + timedelta(hours=2))
     assert [o.odometer_km for o in window] == [101]
+    assert store.observation_before("car", T0 + timedelta(hours=2)).odometer_km == 101
+    assert store.observation_before("car", T0 + timedelta(days=3)).odometer_km == 102
+    assert store.observation_before("car", T0) is None
+    assert store.observation_before("other", T0 + timedelta(days=3)) is None
 
 
 def test_observations_stored_with_motion_fields_still_load():

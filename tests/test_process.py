@@ -3,11 +3,13 @@
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from kmlog import actions
+from kmlog.derive import FLAG_POLL_GAP
 from kmlog.model import LegStatus, Location, LocationType
 from kmlog.process import rederive, reprocess
 from kmlog.store.sqlite import SqliteStore
 from test_aws_handlers import seeded
-from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations
+from test_voorbeelddagen import UNKNOWN, WORKDAY, normal_day, observations, weekend_gap
 
 EVENING = datetime(2026, 10, 7, 21, 30, tzinfo=UTC)
 
@@ -98,3 +100,34 @@ def test_weekend_question():
     legs = rederive(store, "car", now)
     assert [int(leg.business_km) for leg in legs] == [0, 70]
     assert all(leg.status is LegStatus.CONFIRMED for leg in legs)
+
+
+def test_hourly_rederive_keeps_the_leg_across_a_poll_gap():
+    store = seeded(SqliteStore())
+    friday, monday, tuesday = date(2026, 10, 9), date(2026, 10, 12), date(2026, 10, 13)
+    store.put_observations(observations(friday, weekend_gap()))
+    # Tuesday's hourly polls re-derive Monday and Tuesday from Saturday on: the departure
+    # (Friday 19:00) is only found through observation_before
+    rederive(store, "car", datetime(2026, 10, 13, 8, tzinfo=UTC))
+    legs = store.legs("car", friday, tuesday)
+    assert [(leg.date, leg.flags, int(leg.business_km)) for leg in legs] == [
+        (monday, [FLAG_POLL_GAP], 70),
+        (monday, [], 69),
+    ]
+
+
+def test_manual_trip_takes_over_a_poll_gap():
+    store = seeded(SqliteStore())
+    monday = date(2026, 10, 12)
+    now = datetime(2026, 10, 12, 21, tzinfo=UTC)
+    store.put_observations(observations(date(2026, 10, 9), weekend_gap()))
+    rederive(store, "car", now)
+    assert business(store.legs("car", monday, monday)) == 139
+
+    trip = actions.add_manual_trip(store, "car", monday, Decimal(69), "Thuis → Klant", None, now)
+    assert business(store.legs("car", monday, monday)) == 69 + 69  # gap leg now private
+    gap = next(leg for leg in store.legs("car", monday, monday) if FLAG_POLL_GAP in leg.flags)
+    assert (gap.business_km, gap.reason) == (0, "gap_manual")
+
+    actions.delete_manual_trip(store, "car", trip.id, monday, now)
+    assert business(store.legs("car", monday, monday)) == 139

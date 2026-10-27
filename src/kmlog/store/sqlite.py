@@ -153,6 +153,14 @@ class SqliteStore:
         rows = self.db.execute(sql + " ORDER BY polled_at", args).fetchall()
         return [loads(Observation, data) for (data,) in rows]
 
+    def observation_before(self, vehicle: str, before: datetime) -> Observation | None:
+        row = self.db.execute(
+            "SELECT data FROM observations WHERE vehicle = ? AND polled_at < ? "
+            "ORDER BY polled_at DESC LIMIT 1",
+            (vehicle, _utc(before)),
+        ).fetchone()
+        return loads(Observation, row[0]) if row else None
+
     # --- legs and day notes ---------------------------------------------------------------
 
     def replace_legs(
