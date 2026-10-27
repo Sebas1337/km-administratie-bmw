@@ -19,6 +19,10 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
   gat privé (geen dubbeltelling), met een waarschuwing bij meer km dan de auto reed.
 
 ### Gewijzigd
+- Een rit na een nacht op een onbekende of privéplek (of een hotel) staat op zijn eigen dag; alleen
+  na een nacht bij een klant of zakelijke plek (nachtdienst) hoort hij bij de dag van vertrek.
+- Tijden op een andere dag dan de rit tonen de datum (bijv. "vertrokken na vr 23-10 19:00"), op de
+  dag- en maandpagina en in de Excel.
 - `kmlog vergelijk` neemt het uitleesvenster en de laatste meting vóór de periode mee.
 
 ## [0.4.1] - 2026-10-21

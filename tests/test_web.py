@@ -445,6 +445,7 @@ def test_day_page_after_a_poll_gap_quick_trips():
     monday = date(2026, 10, 12)
     body = app(event("GET", f"/dag/{monday}", cookie=cookie))["body"]
     assert "Geen metingen tussen vr 09-10 19:00 en ma 12-10 09:22." in body
+    assert "vertrokken na vr 09-10 19:00, aangekomen 09:22" in body
     # E home <-> client = 70 from the seeded history (the gap leg teaches nothing)
     assert "Thuis → Klant → Thuis · 140 km</button>" in body
     assert "Thuis → Klant · 70 km</button>" in body

@@ -17,7 +17,7 @@
 <div class="card">
   {% if leg.source == CARDATA %}
   <div><strong>{{ names.get(leg.from_location, "onbekend") }} → {{ names.get(leg.to_location, "onbekend") }}</strong>
-    <span class="muted">vertrokken na {{ leg.departed_after|time }}, aangekomen {{ leg.arrived_at|time }}</span></div>
+    <span class="muted">vertrokken na {{ leg.departed_after|at(day) }}, aangekomen {{ leg.arrived_at|at(day) }}</span></div>
   {% else %}
   <div><strong>{{ describe([leg]) }}</strong> <span class="muted">({{ "geïmporteerd" if leg.imported else "handmatig" }})</span></div>
   {% endif %}
@@ -85,7 +85,7 @@
 <div class="scroll"><table>
   <tr><th>Poll</th><th>Km-stand</th><th>Gemeld</th><th>Plek</th></tr>
   {% for r in readings %}
-  <tr><td>{{ r.polled_at|time }}</td><td>{{ r.odometer_km|km }}</td><td>{{ r.reported_at|time }}</td>
+  <tr><td>{{ r.polled_at|time }}</td><td>{{ r.odometer_km|km }}</td><td>{{ r.reported_at|at(day) }}</td>
     <td>{% if r.latlon %}<a href="{{ r.latlon|osm }}" rel="noreferrer" target="_blank">{{ r.place or "onbekend" }}</a>{% else %}–{% endif %}</td></tr>
   {% endfor %}
 </table></div>

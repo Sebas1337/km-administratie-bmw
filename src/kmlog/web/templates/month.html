@@ -54,7 +54,7 @@
   {% for t in m.trips %}
   <tr {% if t.open_confirmation %}class="open"{% endif %}>
     <td class="nowrap"><a href="/dag/{{ t.date.isoformat() }}">{{ t.date|day }}</a></td>
-    <td class="nowrap">{% if t.arrived_at %}na {{ t.departed_after|time }} → {{ t.arrived_at|time }}{% endif %}</td>
+    <td class="nowrap">{% if t.arrived_at %}na {{ t.departed_after|at(t.date) }} → {{ t.arrived_at|at(t.date) }}{% endif %}</td>
     <td>{{ t.description }}{% if t.explanation %}<div class="muted small">{{ t.explanation }}</div>{% endif %}</td>
     <td class="nowrap">{% if t.odometer_from is not none %}{{ t.odometer_from|km }} → {{ t.odometer_to|km }}{% endif %}</td>
     <td class="n">{{ t.driven_km|km }}</td>
@@ -96,7 +96,7 @@
   <tbody>
   {% for place in m.unknown_places %}{% for v in place.visits %}
   <tr><td class="nowrap"><a href="/dag/{{ v.date.isoformat() }}">{{ v.date|day }}</a>{% if loop.length > 1 %} <span class="muted">(zelfde plek {{ loop.index }}/{{ loop.length }})</span>{% endif %}</td>
-    <td class="n">{{ v.km|km }}</td><td>{{ v.arrived_at|time }}</td><td>{{ v.departed_after|time }}</td></tr>
+    <td class="n">{{ v.km|km }}</td><td>{{ v.arrived_at|at(v.date) }}</td><td>{{ v.departed_after|at(v.date) }}</td></tr>
   {% endfor %}{% endfor %}
   </tbody>
 </table></div>

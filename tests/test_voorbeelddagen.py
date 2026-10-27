@@ -199,6 +199,37 @@ def test_f_night_shift_counts_on_departure_day():
     assert business(legs, day) == 140
 
 
+def test_f_night_elsewhere_starts_a_new_day():
+    # client -> somewhere for the night -> home the next morning: the trip home is on day 2
+    day = date(2026, 10, 26)
+    legs, segments = run(
+        day,
+        [
+            ("00:00", "07:30", "home", START_KM),
+            ("08:30", "16:00", "client", START_KM + 70),
+            ("18:12", "32:00", "unknown", START_KM + 138),  # until 08:00 the next day
+            ("32:58", "40:00", "home", START_KM + 152),
+        ],
+    )
+    assert [leg.date for leg in legs] == [day, day, day + timedelta(days=1)]
+    assert segments[1].reason is Reason.STOP  # still one segment client -> stop -> home
+    assert [int(leg.business_km) for leg in legs] == [70, 68, 2]
+
+
+def test_f_night_shift_with_a_stop_on_the_way_back():
+    day = date(2026, 7, 2)
+    legs, _ = run(
+        day,
+        [
+            ("00:00", "20:10", "home", START_KM),
+            ("21:10", "32:30", "client", START_KM + 70),  # until 08:30 on 3 jul
+            ("33:00", "34:30", "unknown", START_KM + 80),  # bakery on the way home
+            ("35:00", "40:00", "home", START_KM + 140),
+        ],
+    )
+    assert [leg.date for leg in legs] == [day, day, day]
+
+
 def test_g_unknown_detour_without_visible_stop():
     legs, segments = run(WORKDAY, normal_day(96))
     seg = segments[-1]

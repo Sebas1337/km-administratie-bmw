@@ -232,3 +232,14 @@ def test_private_only_days_and_trips_are_left_out_of_the_excel(tmp_path):
     assert days == ["Motor", "Thuis → Thuis → Klant → Thuis", "Thuis → Klant 2 → Thuis"]
     trips = [r[4] for r in wb.worksheets[1].iter_rows(min_row=5, values_only=True) if r[0]]
     assert trips == ["Thuis → Klant", "Klant → Thuis", "Thuis → Klant 2", "Klant 2 → Thuis"]
+
+
+def test_clock_shows_the_day_when_it_differs():
+    from datetime import UTC, datetime
+
+    from kmlog.report.maandstaat import clock
+
+    ts = datetime(2026, 10, 27, 7, 0, tzinfo=UTC)  # di 27-10 08:00 Amsterdam
+    assert clock(ts, date(2026, 10, 27)) == "08:00"
+    assert clock(ts, date(2026, 10, 26)) == "di 27-10 08:00"
+    assert clock(None, date(2026, 10, 26)) is None

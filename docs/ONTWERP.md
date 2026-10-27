@@ -189,8 +189,10 @@ geverifieerd tegen de broncode van drie community-clients (zie §12) en in de pr
      wacht op de volgende stop.
 4. **Dag** van een leg = kalenderdag (Europe/Amsterdam) van vertrek **van huis** voor de rit waar
    de leg bij hoort. Een nachtdienst (heen 2 jul 20:10, terug 3 jul 08:30) telt zo één keer, op 2 jul
-   (voorbeeld F). Legs zonder voorafgaand vertrek van huis, of meer dan een dag erna, krijgen hun
-   eigen vertrekdag.
+   (voorbeeld F). Dat geldt alleen als de auto die nacht bij een **klant of zakelijke plek** stond:
+   na een nacht elders (een onbekende plek, een hotel, een privéplek) begint de volgende leg zijn
+   eigen dag (voorbeeld F'). Legs zonder voorafgaand vertrek van huis, of meer dan een dag erna,
+   krijgen hun eigen vertrekdag.
 5. **Rit over een gat**: ontbreken tussen vertrek (`departed_after`) en aankomst (`arrived_at`)
    **3 of meer polls** binnen het uitleesvenster (geen meting binnen 30 minuten van het hele uur,
    bijv. omdat BMW een weekend lang `502` gaf), dan kan de leg meer ritten verbergen. Hij krijgt de
@@ -265,6 +267,7 @@ Stamdata voor de voorbeelden (verzonnen): `home`, `client` (hemelsbreed 50 km va
 | D. Korte onzichtbare stop | 71; client→home 73 | 73 past | **144** |
 | E. Dag zonder auto | geen kilometerstandwijziging | niets | **0** |
 | F. Nachtdienst | home→client 2 jul 20:10 (70); client→home 3 jul 08:30 (70) | één dag, 2 jul | **140** op 2 jul |
+| F'. Nacht elders | home→client 70; client→onbekend 68 (stop 18:12 – volgende dag 08:00); onbekend→home 14 | regel 3 (één segment), maar de laatste leg op dag 2 | **138** op dag 1, **2** op dag 2 |
 | G. Onbekende omweg zonder zichtbare stop | 71; client→home 96 | regel 2, vraag; default `E` | **141** (of 167 na *Omweg*) |
 | H. Weekend bij klant | zaterdag 70; 70 | regel 6: privé, geen vraag; in de maandmail | **0** (140 na *Toch zakelijk*) |
 | I. Privé-dag | home→onbekend 23; onbekend→home 23 | regel 5: privé, geen vraag; in *Onbekende plekken* | **0** |
@@ -485,6 +488,7 @@ tijdstempels.
 | 2026-10-21 | Zonder ingesteld tarief vanaf 2026 € 0,25 per km | Een nieuwe installatie maakt meteen een maandstaat; € 0,25 is de onbelaste maximumvergoeding van 2026. |
 | 2026-10-27 | Rit over een gat (3+ gemiste polls tussen vertrek en aankomst): aankomstdag, zakelijk hooguit `E`, geen vraag; telt niet mee voor `E` | Een BMW-storing van vr 19:00 tot ma 10:00 gaf één leg thuis → klant van 93 km op vrijdag met een omwegvraag: verkeerde dag, en *Omweg* zou 24 km privé declareren. De aankomst is het enige vaste moment. De oude regel 8 (dagdelta vs legs) was nooit gebouwd en zag dit niet: de leg overbrugt het gat. Een tweede bron (CarPlay-opdracht op de telefoon) bewust niet. |
 | 2026-10-27 | Bij een gat: mail op de avond zelf als BMW nog niet bereikbaar is (werkdag, 3+ gemiste polls), en één mail met de km zodra de metingen terug zijn; geen mail als de km-stand gelijk bleef | Alleen wie reed weet wat zakelijk was, en dat liefst dezelfde dag. Zonder verandering in de km-stand is er niets te melden. |
+| 2026-10-27 | Nachtdienstregel (rit op de dag van vertrek van huis) alleen na een nacht bij een klant/zakelijke plek; na een nacht elders krijgt de volgende leg zijn eigen dag; tijden op een andere dag dan de rit tonen de datum | Klant → onbekende plek (overnacht) → thuis de volgende ochtend stond helemaal op maandag, en de dagpagina toonde alleen "08:00", alsof het maandagochtend was. Ook een hotelnacht bij een meerdaagse klus schoof dag 2 naar dag 1. Het segment (regel 3) blijft één geheel; alleen de dag van de leg verandert. |
 | 2026-10-27 | Handmatige rit op een dag van een gat = jij neemt het gat over: de leg erover telt als privé | Anders telt de rit dubbel (handmatig + `E` op de leg). Km aftrekken van de leg is lastiger uit te leggen en levert in geen geval meer op. Waarschuwing als de handmatige km de gereden km overschrijden. |
 | 2026-10-21 | Achter CloudFront: geheime header `X-Origin-Verify`, de app weigert verzoeken zonder; web-Lambda met gereserveerde concurrency 5 | De kale Function URL is dan geen omweg meer, en een vloed verzoeken kost hooguit wat CloudFront-verzoeken in plaats van opschalende Lambdas. Cloudflare als proxy afgewezen: het pakt het verkeer uit (eigen certificaat) en beschermt alleen de route via het domein. |
 

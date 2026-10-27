@@ -38,7 +38,7 @@ class Change:
 def _outcome(leg: Leg | None) -> tuple:
     if leg is None:
         return ()
-    return (leg.distance_km, leg.business_km, leg.status, leg.question)
+    return (leg.date, leg.distance_km, leg.business_km, leg.status, leg.question)
 
 
 def compare(source: Store, vehicle: str, first: date, last: date, now: datetime) -> list[Change]:

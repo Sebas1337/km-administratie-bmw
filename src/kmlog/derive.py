@@ -14,8 +14,10 @@ Rules:
 - A Leg spans two consecutive stops; distance = odometer delta.
 - A leg's day is the Amsterdam calendar day on which the car left home for the trip the leg
   belongs to (a trip = legs from one home departure until the next), so a night shift that
-  returns the next morning counts once, on the departure day (§7.3 day F). Legs not preceded
-  by a home departure, or more than a day after it, fall back to their own departure day.
+  returns the next morning counts once, on the departure day (§7.3 day F). That holds only when
+  the car spent the night at a client/business place: after a night elsewhere (an unknown place,
+  a hotel) the next leg starts its own day. Legs not preceded by a home departure, or more than a
+  day after it, fall back to their own departure day.
 - A leg across a poll gap (MIN_GAP_POLLS or more polls inside the poll window without an
   observation between departure and arrival, e.g. BMW down for a weekend) may hide several
   trips. It gets FLAG_POLL_GAP and the arrival day: the arrival is the only moment we know.
@@ -157,7 +159,11 @@ def derive_legs(
     lie on; leading ones are skipped and trailing ones (the car is on its way now) wait for
     the next stop. With `polled` (sorted polled_at of the observations), legs across a poll gap
     are flagged and dated on their arrival."""
+    locations = list(locations)
     home_ids = {loc.id for loc in locations if loc.type is LocationType.HOME}
+    work_ids = {
+        loc.id for loc in locations if loc.type in (LocationType.CLIENT, LocationType.BUSINESS)
+    }
     stops: list[ParkingEpisode] = []
     between: dict[int, list[Waypoint]] = {}  # index in stops -> waypoints after that stop
     for ep in episodes:
@@ -179,8 +185,14 @@ def derive_legs(
         if gap:
             trip_date = amsterdam_date(ep2.first_seen)
             leg_id = f"{ep1.vehicle}#{ep2.first_seen.astimezone(AMSTERDAM):%Y%m%dT%H%M}-gap"
-        # a trip spans at most one night; anything longer starts a new day on its own
-        elif ep1.location_id in home_ids or trip_date is None or (own_date - trip_date).days > 1:
+        elif ep1.location_id in home_ids or trip_date is None:
+            trip_date = own_date
+        # a trip spans at most one night, spent at a client/business place (night shift); a
+        # night anywhere else, or a longer trip, starts a new day
+        elif own_date != trip_date and (
+            (own_date - trip_date).days > 1
+            or (amsterdam_date(ep1.first_seen) < own_date and ep1.location_id not in work_ids)
+        ):
             trip_date = own_date
         legs.append(
             Leg(
