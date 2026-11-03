@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import openpyxl
@@ -19,12 +19,17 @@ from kmlog.model import (
     VehicleKind,
 )
 from kmlog.report.maandstaat import (
+    DayRow,
+    Maandstaat,
+    TripRow,
     build_jaaroverzicht,
     build_maandstaat,
+    format_euro,
     write_jaaroverzicht,
     write_maandstaat,
 )
 from kmlog.report.pdf import write_jaaroverzicht_pdf, write_maandstaat_pdf
+from kmlog.report.pdfwriter import clean, text_width, wrap
 from kmlog.store.sqlite import SqliteStore
 from test_stamdata import EXAMPLE
 from test_voorbeelddagen import (
@@ -165,7 +170,36 @@ def _pdf_text(path) -> str:
     return "\n".join(page.extract_text() for page in PdfReader(path).pages)
 
 
-def test_pdf_has_the_same_content_as_the_excel(tmp_path):
+def _excel_words(path) -> set[str]:
+    """Every value in the workbook, as the PDF writes it, split in words (a PDF cell wraps)."""
+    words: set[str] = set()
+    for ws in load_workbook(path):
+        for row in ws.iter_rows(values_only=True):
+            for value in row:
+                if isinstance(value, datetime):
+                    text = f"{value:%d-%m-%Y}"
+                elif isinstance(value, int):
+                    text = f"{value:,}".replace(",", ".")
+                elif isinstance(value, float | Decimal):
+                    text = format_euro(round(Decimal(str(value)) * 100))
+                else:
+                    text = str(value or "")
+                words.update(text.split())
+    return words
+
+
+@pytest.mark.parametrize("km", [70, 96])  # all fits; rule 2 with an open question
+def test_pdf_shows_every_value_of_the_excel(tmp_path, km):
+    legs, _ = run(WORKDAY, normal_day(km))
+    m = build_maandstaat(
+        2026, 10, CAR, RATE, [manual(date(2026, 10, 5), 140), *legs], locations=LOCATIONS
+    )
+    excel = _excel_words(write_maandstaat(m, tmp_path / "okt.xlsx"))
+    pdf = set(_pdf_text(write_maandstaat_pdf(m, tmp_path / "okt.pdf")).split())
+    assert excel - pdf == set()
+
+
+def test_pdf_layout_of_maandstaat_and_jaaroverzicht(tmp_path):
     sep = build_maandstaat(2026, 9, CAR, RATE, [manual(date(2026, 9, 14), 88, "Leverancier")])
     okt_legs, _ = run(WORKDAY, normal_day(70))
     okt = build_maandstaat(
@@ -201,6 +235,84 @@ def test_pdf_open_confirmation_and_empty_month(tmp_path):
     empty = build_maandstaat(2026, 11, CAR, RATE, [])
     text = _pdf_text(write_maandstaat_pdf(empty, tmp_path / "nov.pdf"))
     assert "Geen zakelijke ritten in deze maand." in text and "€ 0,00" in text
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Café Één ë ï € × ± – —", "Café Één ë ï € × ± – —"),  # the PDF can show these
+        ("Thuis → Klant", "Thuis → Klant"),
+        ("Łódź Plzeň Říčany Şişli București", "Lódz Plzen Rícany Sisli Bucuresti"),
+        ("ĳsselstein", "ijsselstein"),
+        ("≤ 5 − 2", "<= 5 - 2"),
+        ("Klant 🚗", "Klant "),
+        ("Αθήνα 東京", "????? ??"),  # another alphabet: visibly incomplete
+        ("a\nb\tc", "a b c"),
+        (None, ""),
+    ],
+)
+def test_pdf_text_only_has_characters_the_pdf_can_show(text, expected):
+    assert clean(text) == expected
+
+
+def test_pdf_replaces_special_characters_on_the_page(tmp_path):
+    day = date(2026, 10, 7)
+    m = Maandstaat(CAR, 2026, 10, 25, rows=[DayRow(day, "Thuis → Łódź 🚗 Αθ", 70, 70, 0, "Plzeň")])
+    text = _pdf_text(write_maandstaat_pdf(m, tmp_path / "okt.pdf"))
+    assert "Thuis → Lódz ??" in text and "Plzen" in text
+    assert "■" not in text  # and the Excel keeps the name as it is
+    excel = load_workbook(write_maandstaat(m, tmp_path / "okt.xlsx")).active
+    assert excel.cell(9, 3).value == "Thuis → Łódź 🚗 Αθ"
+
+
+@pytest.mark.parametrize("length", [800, 5000, 20000])
+def test_pdf_row_taller_than_a_page_continues_on_the_next(tmp_path, length):
+    day = date(2026, 10, 7)
+    note = "woord " * (length // 6)
+    m = Maandstaat(
+        CAR,
+        2026,
+        10,
+        25,
+        rows=[DayRow(day, "Thuis → Klant", 70, 70, 0, note)],
+        trips=[TripRow(day, "Thuis → Klant", "leg", driven_km=70, business_km=70, remark=note)],
+    )
+    reader = PdfReader(write_maandstaat_pdf(m, tmp_path / "okt.pdf"))
+    text = "\n".join(page.extract_text() for page in reader.pages)
+    assert text.count("woord") == 2 * (length // 6)  # nothing lost, on the day and the trip row
+    assert len(reader.pages) > 1
+    assert all("Datum" in page.extract_text() for page in reader.pages)  # repeated header
+
+
+def test_pdf_wraps_a_long_word_in_reasonable_time(tmp_path):
+    day = date(2026, 10, 7)
+    word = "x" * 200_000
+    m = Maandstaat(CAR, 2026, 10, 25, rows=[DayRow(day, word, 70, 70, 0)])
+    assert PdfReader(write_maandstaat_pdf(m, tmp_path / "okt.pdf")).pages
+    lines = wrap("kort " + "x" * 500 + " einde", 100)
+    assert lines[0] == "kort" and lines[-1].endswith("einde")
+    assert all(text_width(line) <= 100 for line in lines)
+
+
+def test_pdf_footer_with_a_long_vehicle_name_stays_left_of_the_middle(tmp_path):
+    long_name = Vehicle("car", "N" * 60, "AB-123-C", VehicleKind.CAR, True)
+    m = Maandstaat(long_name, 2026, 10, 25)
+    reader = PdfReader(write_maandstaat_pdf(m, tmp_path / "okt.pdf"))
+    text = reader.pages[0].extract_text()
+    assert "(AB-123-C)" in text  # complete at the top of the page
+    assert text.count("(AB-123-C)") == 1 and "…" in text  # shortened in the footer
+
+
+def test_pdf_file_structure_and_empty_year(tmp_path):
+    m = build_maandstaat(2026, 11, CAR, RATE, [])
+    moment = datetime(2026, 12, 1, 5, 0, tzinfo=UTC)
+    path = write_maandstaat_pdf(m, tmp_path / "nov.pdf", generated_at=moment)
+    reader = PdfReader(path, strict=True)  # a damaged xref or object fails here
+    assert reader.metadata.author == "km-admin"
+    assert reader.metadata.creation_date_raw == "D:20261201060000+01'00'"
+    assert "gemaakt 01-12-2026 06:00" in reader.pages[0].extract_text()
+    text = _pdf_text(write_jaaroverzicht_pdf(2026, CAR, [], tmp_path / "leeg.pdf"))
+    assert "Jaaroverzicht 2026" in text and "Totaal" in text
 
 
 def test_trips_one_row_per_leg():

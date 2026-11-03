@@ -55,6 +55,7 @@ from ..report.maandstaat import (
     format_euro,
     write_maandstaat,
 )
+from ..report.pdf import write_maandstaat_pdf
 from ..report.service import MissingConfig, maandstaat_from_store, rate_for
 from ..store import Store
 from ..version import VERSION
@@ -769,10 +770,7 @@ class WebApp:
             return self.page(
                 "error.html", session, status=404, message="Geen tarief voor dit jaar."
             )
-        if fmt == "pdf":
-            from ..report.pdf import write_maandstaat_pdf as write  # reportlab: only when asked
-        else:
-            write = write_maandstaat
+        write = write_maandstaat_pdf if fmt == "pdf" else write_maandstaat
         name = f"maandstaat-{year}-{month:02d}.{fmt}"
         with tempfile.TemporaryDirectory() as tmp:
             data = write(m, Path(tmp) / name).read_bytes()

@@ -319,10 +319,16 @@ dag met een zakelijke rit telt al zijn km (ook een privéritje die dag). Opslag 
 
 **PDF**: dezelfde maandstaat en ritten (en hetzelfde jaaroverzicht) ook als PDF, als bijlage bij
 de boeking in een boekhoudprogramma (bijv. Exact Online) en voor het archief. Gebouwd uit hetzelfde
-`Maandstaat`-object als de Excel, dus altijd gelijk. A4 liggend, dagregels op de eerste pagina('s),
-ritten op een nieuwe pagina; elke pagina heeft een voettekst met voertuig, versie, aanmaakmoment
-en "pagina x van y". S3 naast de Excel (`.pdf`), de mail heeft beide als bijlage; webinterface
+`Maandstaat`-object als de Excel. A4 liggend, dagregels op de eerste pagina('s), ritten op een nieuwe
+pagina; elke pagina heeft een voettekst met voertuig, versie, aanmaakmoment en "pagina x van y". Een
+rij die niet meer past, gaat naar de volgende pagina onder een herhaalde kop; een rij hoger dan een
+hele pagina loopt door. S3 naast de Excel (`.pdf`), de mail heeft beide als bijlage; webinterface
 `/maand/<jaar>-<maand>.pdf`; CLI `kmlog maandstaat … --pdf`.
+
+De PDF gebruikt de standaardlettertypen (niet ingebed), dus alleen WinAnsi-tekens en de pijl. Andere
+tekens worden bij het maken vervangen: letters door de dichtstbijzijnde gewone letter (`ň` → `n`,
+`Ł` → `L`), emoji vallen weg, en wat geen equivalent heeft (andere alfabetten) wordt `?`. Alleen de
+spelling van een naam kan dus afwijken van de Excel; opgeslagen gegevens blijven ongemoeid.
 
 **Maandmail**: bedrag, jaartotaal, openstaande bevestigingen, en twee lijsten om gemiste zakelijke
 ritten te vinden (elk met een link naar de dagpagina, geen coördinaten in de mail):
@@ -498,7 +504,7 @@ tijdstempels.
 | 2026-10-27 | Nachtdienstregel (rit op de dag van vertrek van huis) alleen na een nacht bij een klant/zakelijke plek; na een nacht elders krijgt de volgende leg zijn eigen dag; tijden op een andere dag dan de rit tonen de datum | Klant → onbekende plek (overnacht) → thuis de volgende ochtend stond helemaal op maandag, en de dagpagina toonde alleen "08:00", alsof het maandagochtend was. Ook een hotelnacht bij een meerdaagse klus schoof dag 2 naar dag 1. Het segment (regel 3) blijft één geheel; alleen de dag van de leg verandert. |
 | 2026-10-27 | Handmatige rit op een dag van een gat = jij neemt het gat over: de leg erover telt als privé | Anders telt de rit dubbel (handmatig + `E` op de leg). Km aftrekken van de leg is lastiger uit te leggen en levert in geen geval meer op. Waarschuwing als de handmatige km de gereden km overschrijden. |
 | 2026-10-21 | Achter CloudFront: geheime header `X-Origin-Verify`, de app weigert verzoeken zonder; web-Lambda met gereserveerde concurrency 5 | De kale Function URL is dan geen omweg meer, en een vloed verzoeken kost hooguit wat CloudFront-verzoeken in plaats van opschalende Lambdas. Cloudflare als proxy afgewezen: het pakt het verkeer uit (eigen certificaat) en beschermt alleen de route via het domein. |
-| 2026-11-03 | Maandstaat en jaaroverzicht ook als PDF (reportlab), naast de Excel; zelfde inhoud, standaard-PDF-fonts, build op `manylinux_2_28` | Boekhoudprogramma's (bijv. Exact Online) nemen een PDF als bijlage bij een boeking, geen .xlsx; een PDF is ook het archiefstuk. Eén `Maandstaat` voor beide formaten, zodat ze nooit verschillen. reportlab omdat het tabellen met herhaalde koppen en paginering kan; geen ingebedde fonts (€, é en × zitten in WinAnsi, de pijl uit Symbol). Pillow (afhankelijkheid van reportlab) heeft geen manylinux2014-wheels meer; de python3.12-runtime is Amazon Linux 2023 (glibc 2.34), dus `manylinux_2_28` past. De zip groeit van ~1 naar ~9 MB. In de web-Lambda wordt reportlab pas geladen bij een PDF-download. |
+| 2026-11-03 | Maandstaat en jaaroverzicht ook als PDF, naast de Excel, met een eigen kleine schrijver op de standaardbibliotheek; tekens buiten WinAnsi worden vervangen | Boekhoudprogramma's (bijv. Exact Online) nemen een PDF als bijlage bij een boeking, geen .xlsx; een PDF is ook het archiefstuk. Eén `Maandstaat` voor beide formaten. reportlab maakte de zip 8 MB groter (~1 → ~9 MB): 6,3 MB daarvan is Pillow met 18 native bibliotheken, door reportlab altijd geïmporteerd terwijl de PDF geen afbeeldingen heeft. Lichtere pakketten vielen af (pdfme crasht op € en →, borb is AGPL, fpdf2 heeft ook Pillow nodig). Een vaste tabel met tekst is goed zelf te schrijven (`report/pdfwriter.py`). Ingebedde lettertypen zijn daarmee bewerkelijk; de spelling van een enkele buitenlandse naam weegt daar niet tegen op. Is ooit een afbeelding of volledige Unicode nodig, dan is reportlab de overstap: alleen `report/pdf.py` verandert. |
 
 ## 12. Bronnen
 

@@ -29,6 +29,7 @@ from .report.maandstaat import (
     write_jaaroverzicht,
     write_maandstaat,
 )
+from .report.pdf import write_jaaroverzicht_pdf, write_maandstaat_pdf
 from .report.service import MissingConfig, maandstaat_from_store
 from .store import Store, open_store
 from .version import VERSION
@@ -90,8 +91,6 @@ def cmd_maandstaat(args, store: Store) -> None:
     ext = "pdf" if _pdf(args) else "xlsx"
     out = args.out or DEFAULT_REPORTS / str(args.year) / f"{args.year}-{args.month:02d}.{ext}"
     if ext == "pdf":
-        from .report.pdf import write_maandstaat_pdf
-
         write_maandstaat_pdf(m, out)
     else:
         write_maandstaat(m, out)
@@ -106,8 +105,6 @@ def cmd_jaaroverzicht(args, store: Store) -> None:
     ext = "pdf" if _pdf(args) else "xlsx"
     out = args.out or DEFAULT_REPORTS / str(args.year) / f"jaaroverzicht-{args.year}.{ext}"
     if ext == "pdf":
-        from .report.pdf import write_jaaroverzicht_pdf
-
         write_jaaroverzicht_pdf(args.year, store.vehicle(args.vehicle), months, out)
     else:
         write_jaaroverzicht(args.year, store.vehicle(args.vehicle), months, out)

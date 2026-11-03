@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 # Build dist/lambda.zip for the kmlog Lambdas (python3.12, arm64).
 # Contents: the kmlog package + runtime dependencies from uv.lock (openpyxl, requests, ...),
-# as manylinux_2_28 aarch64 wheels (the python3.12 runtime is Amazon Linux 2023, glibc 2.34;
-# Pillow, needed by reportlab, no longer ships manylinux2014 wheels). boto3 is provided by the
-# Lambda runtime and not bundled.
+# as manylinux aarch64 wheels. boto3 is provided by the Lambda runtime and not bundled.
 # File timestamps are fixed so an unchanged tree gives an identical zip (stable source hash).
 # kmlog/_build.py gets the version from `git describe` (a tag such as v0.2.0, or tag-commits-sha);
 # KMLOG_VERSION overrides it.
@@ -17,7 +15,7 @@ mkdir -p "$build"
 uv export --frozen --no-dev --no-emit-project --no-hashes --format requirements-txt \
   > dist/lambda-requirements.txt
 uv pip install --quiet --target "$build" --requirement dist/lambda-requirements.txt \
-  --python-platform aarch64-manylinux_2_28 --python-version 3.12 --only-binary :all:
+  --python-platform aarch64-manylinux2014 --python-version 3.12 --only-binary :all:
 cp -r src/kmlog "$build/"
 version=${KMLOG_VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo dev)}
 printf '# written by scripts/build_lambda.sh\nVERSION = "%s"\n' "$version" > "$build/kmlog/_build.py"
