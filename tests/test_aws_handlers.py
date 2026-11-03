@@ -163,7 +163,14 @@ def test_report_handler_uploads_and_mails(aws, dynamodb_table, monkeypatch):
     assert result["business_km"] == 228
     assert result["amount_cents"] == 5700
     keys = [o["Key"] for o in s3.list_objects_v2(Bucket="kmlog-reports-test")["Contents"]]
-    assert sorted(keys) == ["reports/2026/2026-09.xlsx", "reports/2026/jaaroverzicht-2026.xlsx"]
+    assert sorted(keys) == [
+        "reports/2026/2026-09.pdf",
+        "reports/2026/2026-09.xlsx",
+        "reports/2026/jaaroverzicht-2026.pdf",
+        "reports/2026/jaaroverzicht-2026.xlsx",
+    ]
+    head = s3.head_object(Bucket="kmlog-reports-test", Key="reports/2026/2026-09.pdf")
+    assert head["ContentType"] == "application/pdf"
     from moto.backends import get_backend
 
     sent = get_backend("ses")["123456789012"]["eu-central-1"].sent_messages
@@ -172,12 +179,21 @@ def test_report_handler_uploads_and_mails(aws, dynamodb_table, monkeypatch):
     body = msg.get_payload()[0].get_payload(decode=True).decode()
     assert "228 km × € 0,25 = € 57,00" in body
     names = [p.get_filename() for p in msg.get_payload()[1:]]
-    assert names == ["2026-09.xlsx"]  # jaaroverzicht only in the last mail of the year
+    assert names == ["2026-09.xlsx", "2026-09.pdf"]  # jaaroverzicht only in the last mail
+    assert [p.get_content_type() for p in msg.get_payload()[1:]] == [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/pdf",
+    ]
 
     report.handler({"year": 2026, "month": 9, "jaaroverzicht": True}, None, store=store)
     msg = email.message_from_string(sent[-1].raw_data)
     names = [p.get_filename() for p in msg.get_payload()[1:]]
-    assert names == ["2026-09.xlsx", "jaaroverzicht-2026.xlsx"]
+    assert names == [
+        "2026-09.xlsx",
+        "2026-09.pdf",
+        "jaaroverzicht-2026.xlsx",
+        "jaaroverzicht-2026.pdf",
+    ]
     assert store.sent_report("car", 2026, 9).business_km == 228
 
     monkeypatch.setenv("WEB_URL", "https://km.example/")

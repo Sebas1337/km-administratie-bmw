@@ -3,6 +3,7 @@
     kmlog stamdata                     <- data/stamdata.toml (vehicle, locations, rates)
     kmlog maandstaat 2026 9            -> data/reports/2026/2026-09.xlsx
     kmlog jaaroverzicht 2026           -> data/reports/2026/jaaroverzicht-2026.xlsx
+    kmlog maandstaat 2026 9 --pdf      -> data/reports/2026/2026-09.pdf (ook: --out x.pdf)
     kmlog vergelijk 2026-10-01 2026-10-31   ritten opnieuw indelen op een kopie, verschillen tonen
 
 Everything lives in a local SQLite database (default data/kmlog.sqlite, gitignored), or with
@@ -79,10 +80,21 @@ def _maandstaat(store: Store, vehicle_id: str, year: int, month: int) -> Maandst
         sys.exit(str(e))
 
 
+def _pdf(args) -> bool:
+    """PDF instead of Excel: --pdf, or an --out that ends in .pdf."""
+    return args.pdf or (args.out is not None and args.out.suffix.lower() == ".pdf")
+
+
 def cmd_maandstaat(args, store: Store) -> None:
     m = _maandstaat(store, args.vehicle, args.year, args.month)
-    out = args.out or DEFAULT_REPORTS / str(args.year) / f"{args.year}-{args.month:02d}.xlsx"
-    write_maandstaat(m, out)
+    ext = "pdf" if _pdf(args) else "xlsx"
+    out = args.out or DEFAULT_REPORTS / str(args.year) / f"{args.year}-{args.month:02d}.{ext}"
+    if ext == "pdf":
+        from .report.pdf import write_maandstaat_pdf
+
+        write_maandstaat_pdf(m, out)
+    else:
+        write_maandstaat(m, out)
     print(f"{m.title}: {m.business_km} km = {format_euro(m.amount_cents)} → {out}")
     if m.open_confirmations:
         print(f"  {len(m.open_confirmations)} dag(en) met openstaande bevestiging")
@@ -91,8 +103,14 @@ def cmd_maandstaat(args, store: Store) -> None:
 def cmd_jaaroverzicht(args, store: Store) -> None:
     months = [_maandstaat(store, args.vehicle, args.year, m) for m in range(1, 13)]
     months = [m for m in months if m.rows]
-    out = args.out or DEFAULT_REPORTS / str(args.year) / f"jaaroverzicht-{args.year}.xlsx"
-    write_jaaroverzicht(args.year, store.vehicle(args.vehicle), months, out)
+    ext = "pdf" if _pdf(args) else "xlsx"
+    out = args.out or DEFAULT_REPORTS / str(args.year) / f"jaaroverzicht-{args.year}.{ext}"
+    if ext == "pdf":
+        from .report.pdf import write_jaaroverzicht_pdf
+
+        write_jaaroverzicht_pdf(args.year, store.vehicle(args.vehicle), months, out)
+    else:
+        write_jaaroverzicht(args.year, store.vehicle(args.vehicle), months, out)
     for t in build_jaaroverzicht(months):
         print(f"  {MONTHS[t.month]:10} {t.business_km:6} km  {format_euro(t.amount_cents):>12}")
     total_km = sum(m.business_km for m in months)
@@ -142,15 +160,17 @@ def main(argv: list[str] | None = None) -> None:
     )
     p.set_defaults(func=cmd_stamdata)
 
-    p = sub.add_parser("maandstaat", help="maandstaat als .xlsx")
+    p = sub.add_parser("maandstaat", help="maandstaat als .xlsx (of .pdf)")
     p.add_argument("year", type=int)
     p.add_argument("month", type=int, choices=range(1, 13), metavar="month")
     p.add_argument("--out", type=Path)
+    p.add_argument("--pdf", action="store_true", help="PDF in plaats van Excel")
     p.set_defaults(func=cmd_maandstaat)
 
-    p = sub.add_parser("jaaroverzicht", help="jaaroverzicht + alle maanden als .xlsx")
+    p = sub.add_parser("jaaroverzicht", help="jaaroverzicht + alle maanden als .xlsx (of .pdf)")
     p.add_argument("year", type=int)
     p.add_argument("--out", type=Path)
+    p.add_argument("--pdf", action="store_true", help="PDF in plaats van Excel")
     p.set_defaults(func=cmd_jaaroverzicht)
 
     p = sub.add_parser(

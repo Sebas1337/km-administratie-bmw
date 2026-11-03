@@ -46,7 +46,7 @@ auto de sensor is, vallen dagen waarop de auto niet rijdt vanzelf weg.
   afstand en de rest privé (conservatief), met één knop om te overrulen (bijv. omweg door file).
 - Een rit naar een **onbekende plek**, en alles in het weekend, is privé zonder vraag. De maandmail
   noemt die plekken; als klant opslaan maakt de rit alsnog zakelijk.
-- Dagelijks een mail met nieuwe vragen; op de 1e van de maand de maandstaat (.xlsx) per mail.
+- Dagelijks een mail met nieuwe vragen; op de 1e van de maand de maandstaat (.xlsx en .pdf) per mail.
 - Een webinterface (inloggen met maillink) voor vragen, correcties, handmatige ritten en stamdata.
 
 ## 3. Eisen en randvoorwaarden
@@ -58,7 +58,7 @@ Functioneel
 - F2. Dagen zonder autorit (bijv. met een ander vervoermiddel) leveren geen rit op.
 - F3. Tussenstops en omwegen worden correct afgehandeld (§7).
 - F4. Alleen bij uitzonderingen is een bevestiging nodig, met één tik.
-- F5. Maandelijks automatisch een maandstaat (.xlsx) met ritten, km, tarief, bedrag en
+- F5. Maandelijks automatisch een maandstaat (.xlsx en .pdf) met ritten, km, tarief, bedrag en
   kilometerstand begin/einde maand; plus een jaaroverzicht.
 - F6. Tarief per jaar instelbaar.
 
@@ -102,7 +102,7 @@ EventBridge Scheduler (dagelijks 20:00)
          mailt nieuwe vragen (en desgewenst "gemist?"-dagen) als er iets nieuws is
 
 EventBridge Scheduler (1e van de maand 06:00)
-   └─► Lambda kmlog-report → maandstaat .xlsx (+ jaaroverzicht in december) → S3 → SES-mail
+   └─► Lambda kmlog-report → maandstaat .xlsx + .pdf (+ jaaroverzicht in december) → S3 → SES-mail
 
 Lambda kmlog-web achter een Function URL: webinterface (§9)
 
@@ -317,6 +317,13 @@ mee). Dagen en ritten die alleen privé zijn (geen zakelijke km, geen open vraag
 Excel (de declaratie voor de BV); de maandpagina toont ze wel, als ingang naar de dagpagina. Een
 dag met een zakelijke rit telt al zijn km (ook een privéritje die dag). Opslag in S3 (`reports/<jaar>/<jaar>-<maand>.xlsx`), mail via SES op de 1e.
 
+**PDF**: dezelfde maandstaat en ritten (en hetzelfde jaaroverzicht) ook als PDF, als bijlage bij
+de boeking in een boekhoudprogramma (bijv. Exact Online) en voor het archief. Gebouwd uit hetzelfde
+`Maandstaat`-object als de Excel, dus altijd gelijk. A4 liggend, dagregels op de eerste pagina('s),
+ritten op een nieuwe pagina; elke pagina heeft een voettekst met voertuig, versie, aanmaakmoment
+en "pagina x van y". S3 naast de Excel (`.pdf`), de mail heeft beide als bijlage; webinterface
+`/maand/<jaar>-<maand>.pdf`; CLI `kmlog maandstaat … --pdf`.
+
 **Maandmail**: bedrag, jaartotaal, openstaande bevestigingen, en twee lijsten om gemiste zakelijke
 ritten te vinden (elk met een link naar de dagpagina, geen coördinaten in de mail):
 
@@ -337,7 +344,7 @@ van een plek als klant), dan toont de maandpagina "gewijzigd na verzending" met 
 datum, "vertrokken na" (laatste poll waarin de auto nog stond; het echte vertrek ligt daartussen) en
 aankomst, van → naar, route, km-stand vertrek/aankomst, gereden/zakelijk/privé, opmerking.
 Handmatige ritten zijn één regel zonder tijden. Webinterface: schakelaar "Per dag · Per rit" op de
-maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
+maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>"; PDF: vanaf een nieuwe pagina.
 
 **Jaaroverzicht**: per maand ritdagen, km en bedrag, plus totaal.
 
@@ -359,7 +366,7 @@ maandpagina; Excel: tweede tabblad "Ritten <maand> <jaar>".
     stond de auto stil, dan is er geen leg en dus geen mail.
 - **Webinterface** = Lambda `kmlog-web` achter een **Function URL**, server-side HTML, geen
   JavaScript, mobiel eerst. Pagina's: maand (ritten per dag of per rit, totaal, bedrag,
-  Excel-download, openstaande vragen met één-tik-knoppen, laatste positie van de auto), dag (legs met
+  Excel- en PDF-download, openstaande vragen met één-tik-knoppen, laatste positie van de auto), dag (legs met
   tijden en een kaartje van de aankomstplek, zakelijke km corrigeren met notitie, handmatige rit
   toevoegen/verwijderen, antwoord intrekken, alle metingen), jaar, instellingen (auto, vergoeding per
   jaar, uitleesvenster, meldingen, locaties en de geleerde afstanden (alleen lezen)), auto
@@ -491,6 +498,7 @@ tijdstempels.
 | 2026-10-27 | Nachtdienstregel (rit op de dag van vertrek van huis) alleen na een nacht bij een klant/zakelijke plek; na een nacht elders krijgt de volgende leg zijn eigen dag; tijden op een andere dag dan de rit tonen de datum | Klant → onbekende plek (overnacht) → thuis de volgende ochtend stond helemaal op maandag, en de dagpagina toonde alleen "08:00", alsof het maandagochtend was. Ook een hotelnacht bij een meerdaagse klus schoof dag 2 naar dag 1. Het segment (regel 3) blijft één geheel; alleen de dag van de leg verandert. |
 | 2026-10-27 | Handmatige rit op een dag van een gat = jij neemt het gat over: de leg erover telt als privé | Anders telt de rit dubbel (handmatig + `E` op de leg). Km aftrekken van de leg is lastiger uit te leggen en levert in geen geval meer op. Waarschuwing als de handmatige km de gereden km overschrijden. |
 | 2026-10-21 | Achter CloudFront: geheime header `X-Origin-Verify`, de app weigert verzoeken zonder; web-Lambda met gereserveerde concurrency 5 | De kale Function URL is dan geen omweg meer, en een vloed verzoeken kost hooguit wat CloudFront-verzoeken in plaats van opschalende Lambdas. Cloudflare als proxy afgewezen: het pakt het verkeer uit (eigen certificaat) en beschermt alleen de route via het domein. |
+| 2026-11-03 | Maandstaat en jaaroverzicht ook als PDF (reportlab), naast de Excel; zelfde inhoud, standaard-PDF-fonts, build op `manylinux_2_28` | Boekhoudprogramma's (bijv. Exact Online) nemen een PDF als bijlage bij een boeking, geen .xlsx; een PDF is ook het archiefstuk. Eén `Maandstaat` voor beide formaten, zodat ze nooit verschillen. reportlab omdat het tabellen met herhaalde koppen en paginering kan; geen ingebedde fonts (€, é en × zitten in WinAnsi, de pijl uit Symbol). Pillow (afhankelijkheid van reportlab) heeft geen manylinux2014-wheels meer; de python3.12-runtime is Amazon Linux 2023 (glibc 2.34), dus `manylinux_2_28` past. De zip groeit van ~1 naar ~9 MB. In de web-Lambda wordt reportlab pas geladen bij een PDF-download. |
 
 ## 12. Bronnen
 

@@ -6,6 +6,7 @@ Routes
     GET  /                        -> /maand/<huidige maand>
     GET  /maand/YYYY-MM           maandoverzicht + openstaande vragen
     GET  /maand/YYYY-MM.xlsx      maandstaat als Excel
+    GET  /maand/YYYY-MM.pdf       maandstaat als PDF (voor de boekhouding)
     GET  /dag/YYYY-MM-DD          ritten van één dag: corrigeren, handmatige rit, vragen
     GET  /jaar/YYYY               jaaroverzicht
     GET  /instellingen            auto, tarieven, uitlees-venster, meldingen, locaties,
@@ -60,7 +61,10 @@ from ..version import VERSION
 from .auth import Auth, Session
 from .osm_map import TILE_ORIGIN, static_map
 
-XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+CONTENT_TYPES = {
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+}
 RECENT_DAYS = 45  # open questions shown on every page
 STAMDATA_REPROCESS_DAYS = 31
 
@@ -332,12 +336,12 @@ class WebApp:
         today = amsterdam_date(self.now())
         if path == "/":
             return redirect(f"/maand/{today:%Y-%m}")
-        if m := re.fullmatch(r"/maand/(\d{4})-(\d{2})(\.xlsx)?", path):
+        if m := re.fullmatch(r"/maand/(\d{4})-(\d{2})(?:\.(xlsx|pdf))?", path):
             year, month = int(m.group(1)), int(m.group(2))
             if not 1 <= month <= 12:
                 return self.not_found(session)
             if m.group(3):
-                return self.xlsx(session, year, month)
+                return self.download(session, year, month, m.group(3))
             return self.month(req, session, year, month)
         if m := re.fullmatch(r"/dag/(\d{4}-\d{2}-\d{2})", path):
             try:
@@ -757,21 +761,27 @@ class WebApp:
             map=static_map(lat, lon, width=480, height=240),
         )
 
-    def xlsx(self, session: Session, year: int, month: int) -> Response:
+    def download(self, session: Session, year: int, month: int, fmt: str) -> Response:
+        """The maandstaat as Excel or PDF (`fmt` "xlsx" or "pdf")."""
         try:
             m = maandstaat_from_store(self.store, self.vehicle, year, month)
         except MissingConfig:
             return self.page(
                 "error.html", session, status=404, message="Geen tarief voor dit jaar."
             )
+        if fmt == "pdf":
+            from ..report.pdf import write_maandstaat_pdf as write  # reportlab: only when asked
+        else:
+            write = write_maandstaat
+        name = f"maandstaat-{year}-{month:02d}.{fmt}"
         with tempfile.TemporaryDirectory() as tmp:
-            data = write_maandstaat(m, Path(tmp) / f"{year}-{month:02d}.xlsx").read_bytes()
+            data = write(m, Path(tmp) / name).read_bytes()
         return Response(
             200,
             data,
             {
-                "Content-Type": XLSX,
-                "Content-Disposition": f'attachment; filename="maandstaat-{year}-{month:02d}.xlsx"',
+                "Content-Type": CONTENT_TYPES[fmt],
+                "Content-Disposition": f'attachment; filename="{name}"',
             },
         )
 

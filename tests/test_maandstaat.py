@@ -4,6 +4,7 @@ from decimal import Decimal
 import openpyxl
 import pytest
 from openpyxl import load_workbook
+from pypdf import PdfReader
 
 from kmlog.classify import Answer, apply_answer
 from kmlog.cli import main
@@ -23,6 +24,7 @@ from kmlog.report.maandstaat import (
     write_jaaroverzicht,
     write_maandstaat,
 )
+from kmlog.report.pdf import write_jaaroverzicht_pdf, write_maandstaat_pdf
 from kmlog.store.sqlite import SqliteStore
 from test_stamdata import EXAMPLE
 from test_voorbeelddagen import (
@@ -152,6 +154,53 @@ def test_cli_stamdata_and_reports(tmp_path, capsys):
     assert "Maandstaat september 2026: 228 km = € 57,00" in out
     assert "Totaal 2026: 228 km = € 57,00" in out
     assert (tmp_path / "sep.xlsx").exists() and (tmp_path / "jaar.xlsx").exists()
+
+    main(["--db", str(db), "maandstaat", "2026", "9", "--out", str(tmp_path / "sep.pdf")])
+    main(["--db", str(db), "jaaroverzicht", "2026", "--pdf", "--out", str(tmp_path / "jaar")])
+    assert "Maandstaat september 2026" in _pdf_text(tmp_path / "sep.pdf")
+    assert "Jaaroverzicht 2026" in _pdf_text(tmp_path / "jaar")
+
+
+def _pdf_text(path) -> str:
+    return "\n".join(page.extract_text() for page in PdfReader(path).pages)
+
+
+def test_pdf_has_the_same_content_as_the_excel(tmp_path):
+    sep = build_maandstaat(2026, 9, CAR, RATE, [manual(date(2026, 9, 14), 88, "Leverancier")])
+    okt_legs, _ = run(WORKDAY, normal_day(70))
+    okt = build_maandstaat(
+        2026, 10, CAR, RATE, [manual(date(2026, 10, 5), 140), *okt_legs], locations=LOCATIONS
+    )
+    reader = PdfReader(write_maandstaat_pdf(okt, tmp_path / "okt.pdf"))
+    assert reader.metadata.title == "Maandstaat oktober 2026"
+    pages = [page.extract_text() for page in reader.pages]
+    assert len(pages) == 2  # declaration per day, then the trips
+    day, trips = pages
+    assert "Maandstaat oktober 2026" in day and "BMW i4 (AB-123-C)" in day
+    assert "€ 0,25 per km" in day and "€ 70,25" in day  # 281 km
+    assert "Thuis → Klant → Thuis" in day  # the arrow survives (Symbol font)
+    assert "07-10-2026" in day and "40.141" in day  # date and odometer
+    assert "pagina 1 van 2" in day
+    assert "Ritten oktober 2026" in trips
+    assert "Thuis → Klant" in trips and "08:30" in trips and "17:45" in trips
+    assert "pagina 2 van 2" in trips
+
+    jaar = _pdf_text(write_jaaroverzicht_pdf(2026, CAR, [okt, sep], tmp_path / "jaar.pdf"))
+    assert "Jaaroverzicht 2026" in jaar
+    assert jaar.index("Maandstaat september 2026") < jaar.index("Maandstaat oktober 2026")
+    assert "€ 92,25" in jaar  # 369 km over both months
+    assert "Ritten oktober" not in jaar  # like the Excel: no trips in the jaaroverzicht
+
+
+def test_pdf_open_confirmation_and_empty_month(tmp_path):
+    legs, _ = run(WORKDAY, normal_day(96))  # rule 2: longer than expected, a question
+    m = build_maandstaat(2026, 10, CAR, RATE, legs, locations=LOCATIONS)
+    text = _pdf_text(write_maandstaat_pdf(m, tmp_path / "okt.pdf"))
+    assert "Openstaande bevestigingen" in text and "te bevestigen" in text
+
+    empty = build_maandstaat(2026, 11, CAR, RATE, [])
+    text = _pdf_text(write_maandstaat_pdf(empty, tmp_path / "nov.pdf"))
+    assert "Geen zakelijke ritten in deze maand." in text and "€ 0,00" in text
 
 
 def test_trips_one_row_per_leg():

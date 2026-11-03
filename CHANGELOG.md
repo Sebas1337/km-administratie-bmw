@@ -7,6 +7,17 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+### Toegevoegd
+- Maandstaat en jaaroverzicht ook als PDF, met dezelfde inhoud als de Excel: als bijlage voor je
+  boekhoudprogramma (bijv. Exact Online) en voor het archief. De maandmail heeft beide als
+  bijlage, S3 bewaart beide, de maandpagina heeft een knop **PDF** en `kmlog maandstaat` /
+  `kmlog jaaroverzicht` maken een PDF met `--pdf`.
+
+### Gewijzigd
+- Het Lambda-pakket is gebouwd voor `manylinux_2_28` (Amazon Linux 2023) en is door de
+  PDF-bibliotheek groter (~9 MB). Opgeslagen gegevens veranderen niet; terugzetten naar 0.5.0 kan
+  zonder meer.
+
 ## [0.5.0] - 2026-10-27
 
 ### Toegevoegd
