@@ -7,6 +7,8 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-03
+
 ### Toegevoegd
 - Maandstaat en jaaroverzicht ook als PDF, met dezelfde inhoud als de Excel: als bijlage voor je
   boekhoudprogramma (bijv. Exact Online) en voor het archief. De maandmail heeft beide als
@@ -16,7 +18,6 @@ GitHub Release (`lambda.zip`); installeren, bijwerken of terugzetten gaat met
   `?`); de Excel en de opgeslagen gegevens houden de oorspronkelijke tekst. Geen nieuwe
   afhankelijkheden: het Lambda-pakket blijft ~1,2 MB. Opgeslagen gegevens veranderen niet;
   terugzetten naar 0.5.0 kan zonder meer.
-
 
 ## [0.5.0] - 2026-10-27
 
