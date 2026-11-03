@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import openpyxl
@@ -235,6 +235,38 @@ def test_pdf_open_confirmation_and_empty_month(tmp_path):
     empty = build_maandstaat(2026, 11, CAR, RATE, [])
     text = _pdf_text(write_maandstaat_pdf(empty, tmp_path / "nov.pdf"))
     assert "Geen zakelijke ritten in deze maand." in text and "€ 0,00" in text
+
+
+def test_private_only_days_and_trips_are_left_out_of_the_pdf(tmp_path):
+    private, _ = _private_day(WORKDAY)  # home -> unknown -> home, 0 km business
+    mixed, _ = run(
+        WORKDAY + timedelta(days=1),
+        [
+            ("08:00", "09:00", "home", 0),
+            ("10:30", "16:00", "client", 71),
+            ("17:30", "18:00", "home", 141),
+            ("19:00", "20:00", "unknown", 164),  # a private trip after work
+            ("21:00", "22:00", "home", 187),
+        ],
+    )
+    m = build_maandstaat(2026, 10, CAR, RATE, [*private, *mixed], locations=LOCATIONS)
+    assert [(r.date, r.declared) for r in m.rows] == [
+        (WORKDAY, False),
+        (WORKDAY + timedelta(days=1), True),
+    ]
+    assert any(not t.declared for t in m.trips if t.date == WORKDAY + timedelta(days=1))
+
+    reader = PdfReader(write_maandstaat_pdf(m, tmp_path / "okt.pdf"))
+    day, trips = [page.extract_text() for page in reader.pages]
+    assert "07-10-2026" not in day + trips  # the private-only day is nowhere
+    assert f"{WORKDAY + timedelta(days=1):%d-%m-%Y}" in day
+    assert "onbekend" in day  # the day row describes the whole day, as in the Excel
+    assert "Thuis → onbekend" not in trips and "onbekend → Thuis" not in trips  # no private rows
+
+    excel = load_workbook(write_maandstaat(m, tmp_path / "okt.xlsx"))
+    excel_trips = [r[4] for r in excel.worksheets[1].iter_rows(min_row=5, values_only=True) if r[0]]
+    assert excel_trips == ["Thuis → Klant", "Klant → Thuis"]  # the same rows as in the PDF
+    assert all(trip in trips for trip in excel_trips)
 
 
 @pytest.mark.parametrize(
