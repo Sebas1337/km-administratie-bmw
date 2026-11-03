@@ -9,7 +9,7 @@ Serverless, standaard in regio `eu-central-1`, alles met de naam `kmlog-*`:
 | DynamoDB | `kmlog-data` | single table: stamdata, observaties, legs, antwoorden, quotumteller (PITR aan, deletion protection) |
 | Secrets Manager | `kmlog/cardata` | BMW Client ID, roterende tokens, VIN, container id; geschreven door de webinterface (pagina *Auto*) en de poller, nooit door Terraform |
 | Secrets Manager | `kmlog/web` | sleutel voor sessiecookies (door Terraform gegenereerd) |
-| S3 | `kmlog-reports-<account>-<regio>` | maandstaten `reports/<jaar>/…xlsx` |
+| S3 | `kmlog-reports-<account>-<regio>` | maandstaten `reports/<jaar>/…xlsx` en `…pdf` |
 | Lambda | `kmlog-poller` | elk uur; binnen het venster uit de webinterface (Instellingen → Uitlezen, standaard 06–23): token refresh, quotum, telematicData → observatie → legs |
 | Lambda | `kmlog-report` | 1e van de maand 06:00: maandstaat (+ jaaroverzicht in januari) → S3 + mail |
 | Lambda + Function URL | `kmlog-web` | webinterface; inloggen met maillink; output `web_url` |

@@ -2,7 +2,7 @@
 
 *English summary: km-administratie-bmw reads the odometer and position of your BMW every hour through the
 official BMW CarData API, turns that into trips, classifies them as business or private using
-your own places and the distances it learns between them, and mails you a monthly mileage statement (Excel). It runs
+your own places and the distances it learns between them, and mails you a monthly mileage statement (Excel and PDF). It runs
 serverless in your own AWS account for < 1 euro a month. The UI and documents are in Dutch.*
 
 Rijd je zakelijk met je privé-BMW en declareer je de kilometers bij je eigen bv? Dan hoef je
@@ -30,9 +30,10 @@ en op de 1e van de maand komt de maandstaat in je mail.
   feestdag, tellen als privé. De maandmail noemt die plekken en weekendritten naar klanten, zodat
   je een vergeten zakelijke rit alsnog meetelt (plek opslaan als klant, of "Toch zakelijk").
   Dagen waarop je de auto niet gebruikt, staan ook niet op de maandstaat.
-- **Maandstaat en jaaroverzicht** als Excel, met per dag gereden, zakelijke en
+- **Maandstaat en jaaroverzicht** als Excel en als PDF (met dezelfde inhoud, als bijlage voor
+  je boekhoudprogramma, bijv. Exact Online), met per dag gereden, zakelijke en
   privé-kilometers en de kilometerstand, en per rit een korte uitleg. Dagen met alleen
-  privéritten staan niet in de Excel, wel op de maandpagina. Het tarief per km stel je per jaar in.
+  privéritten staan niet in de Excel en PDF, wel op de maandpagina. Het tarief per km stel je per jaar in.
 - **Webinterface** voor telefoon en desktop: maand-, dag- en jaaroverzicht, kaartjes van
   elke aankomstplek, correcties, handmatige ritten (bijv. met een leenauto), instellingen, en
   het koppelen van de auto. Inloggen gaat zonder wachtwoord, met een link per mail.
@@ -72,8 +73,8 @@ flowchart LR
 3. **Classificeren.** Ritten tussen je plekken worden vergeleken met de afstand die km-admin uit
    eerdere ritten heeft geleerd (+15%). Een flinke omweg wordt een vraag, met een veilige
    standaard als je niets antwoordt.
-4. **Rapporteren.** Op de 1e van de maand gaat de maandstaat als Excel naar je mail en naar
-   S3. In december komt het jaaroverzicht mee.
+4. **Rapporteren.** Op de 1e van de maand gaat de maandstaat als Excel en PDF naar je mail en
+   naar S3. In december komt het jaaroverzicht mee.
 
 Het volledige ontwerp, met alle regels en voorbeelddagen, staat in
 [`docs/ONTWERP.md`](docs/ONTWERP.md).
@@ -226,9 +227,9 @@ Liever auto, tarieven en locaties in een bestand? Kopieer
 Klaar. Vanaf nu:
 
 - **elke avond om 20:00** een mail als er nieuwe vragen zijn;
-- **op de 1e van de maand** de maandstaat (Excel) in je mail.
+- **op de 1e van de maand** de maandstaat (Excel en PDF) in je mail.
 
-Een maandstaat tussendoor kan altijd via de knop **Excel** op de maandpagina.
+Een maandstaat tussendoor kan altijd via de knoppen **Excel** en **PDF** op de maandpagina.
 
 ## Kosten
 

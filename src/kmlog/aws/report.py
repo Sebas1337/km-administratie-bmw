@@ -7,7 +7,8 @@ What was mailed is stored (SentReport), so the web UI can tell when the statemen
 Environment: TABLE_NAME, VEHICLE_ID, REPORTS_BUCKET, REPORT_EMAIL, WEB_URL (links in the mail).
 The jaaroverzicht is always refreshed in S3 but only attached to the last mail of the year
 (december), unless the event says {"jaaroverzicht": true}.
-Files: s3://$REPORTS_BUCKET/reports/<year>/<year>-<mm>.xlsx and .../jaaroverzicht-<year>.xlsx
+Files: s3://$REPORTS_BUCKET/reports/<year>/<year>-<mm>.xlsx and .../jaaroverzicht-<year>.xlsx,
+each also as .pdf (same content, for bookkeeping software); the mail attaches both formats.
 """
 
 from __future__ import annotations
@@ -23,11 +24,14 @@ from ..derive import AMSTERDAM
 from ..model import SentReport
 from ..report.maandstaat import MONTHS, WEEKDAYS, Maandstaat, write_jaaroverzicht, write_maandstaat
 from ..report.maandstaat import format_euro as euro
+from ..report.pdf import write_jaaroverzicht_pdf, write_maandstaat_pdf
 from ..report.service import maandstaat_from_store, year_to_date
 from ..store import Store
 from . import env, log_event, mail_subject
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PDF = "application/pdf"
+CONTENT_TYPES = {".xlsx": XLSX, ".pdf": PDF}
 
 
 def previous_month(now: datetime) -> tuple[int, int]:
@@ -91,7 +95,7 @@ def build_mail(sender: str, to: str, subject: str, body: str, files: list[Path])
     msg["From"], msg["To"], msg["Subject"] = sender, to, mail_subject(subject)
     msg.attach(MIMEText(body, "plain", "utf-8"))
     for f in files:
-        part = MIMEApplication(f.read_bytes(), _subtype=XLSX.split("/")[1])
+        part = MIMEApplication(f.read_bytes(), _subtype=CONTENT_TYPES[f.suffix].split("/")[1])
         part.add_header("Content-Disposition", "attachment", filename=f.name)
         msg.attach(part)
     return msg.as_bytes()
@@ -116,19 +120,25 @@ def run(
     m = maandstaat_from_store(store, vehicle, year, month)
     months = year_to_date(store, vehicle, year, month)
     with tempfile.TemporaryDirectory() as tmp:
-        files = [
-            write_maandstaat(m, Path(tmp) / f"{year}-{month:02d}.xlsx"),
-            write_jaaroverzicht(year, m.vehicle, months, Path(tmp) / f"jaaroverzicht-{year}.xlsx"),
+        tmp = Path(tmp)
+        month_name, year_name = f"{year}-{month:02d}", f"jaaroverzicht-{year}"
+        maandstaat = [
+            write_maandstaat(m, tmp / f"{month_name}.xlsx"),
+            write_maandstaat_pdf(m, tmp / f"{month_name}.pdf"),
+        ]
+        jaaroverzicht = [
+            write_jaaroverzicht(year, m.vehicle, months, tmp / f"{year_name}.xlsx"),
+            write_jaaroverzicht_pdf(year, m.vehicle, months, tmp / f"{year_name}.pdf"),
         ]
         keys = []
-        for f in files:
+        for f in maandstaat + jaaroverzicht:
             key = f"reports/{year}/{f.name}"
-            s3.upload_file(str(f), bucket, key, ExtraArgs={"ContentType": XLSX})
+            s3.upload_file(str(f), bucket, key, ExtraArgs={"ContentType": CONTENT_TYPES[f.suffix]})
             keys.append(key)
         if email:
             body = mail_body(m, months, web_url)
             subject = f"{m.title} (gecorrigeerd)" if corrected else m.title
-            attachments = files if attach_jaaroverzicht else files[:1]
+            attachments = maandstaat + jaaroverzicht if attach_jaaroverzicht else maandstaat
             raw = build_mail(email, email, subject, body, attachments)
             ses.send_raw_email(Source=email, Destinations=[email], RawMessage={"Data": raw})
             sent = SentReport(

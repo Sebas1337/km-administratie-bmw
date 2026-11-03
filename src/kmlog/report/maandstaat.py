@@ -1,4 +1,4 @@
-"""Maandstaat and jaaroverzicht (Excel, later PDF). See ONTWERP.md §9.
+"""Maandstaat and jaaroverzicht (Excel; the PDF is in report/pdf.py). See ONTWERP.md §9.
 
 Per month: vehicle, rate; per day: date, description, driven / business / private km,
 remark (note, flags, open confirmation); totals (business km, amount in cents), odometer at

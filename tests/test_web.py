@@ -1,5 +1,6 @@
 """Web UI: login, sessions, CSRF, pages and answers via fake Function URL events."""
 
+import base64
 import re
 from datetime import UTC, date, datetime, timedelta
 from urllib.parse import urlencode
@@ -395,7 +396,7 @@ def test_month_page_review_lists_and_resend(env):
     assert app(event("POST", "/maand/2026-09/mail", form, cookie))["statusCode"] == 400
 
 
-def test_year_page_stamdata_page_and_xlsx(env):
+def test_year_page_stamdata_page_and_downloads(env):
     app, store, mails, _ = env
     store.put_leg(manual(date(2026, 9, 14), 88))
     cookie = login(app, mails)
@@ -405,6 +406,12 @@ def test_year_page_stamdata_page_and_xlsx(env):
     assert "Thuis" in body
     resp = app(event("GET", "/maand/2026-09.xlsx", cookie=cookie))
     assert resp["isBase64Encoded"] and "attachment" in resp["headers"]["Content-Disposition"]
+    resp = app(event("GET", "/maand/2026-09.pdf", cookie=cookie))
+    assert resp["headers"]["Content-Type"] == "application/pdf"
+    assert 'filename="maandstaat-2026-09.pdf"' in resp["headers"]["Content-Disposition"]
+    assert base64.b64decode(resp["body"]).startswith(b"%PDF")
+    assert app(event("GET", "/maand/2026-09.doc", cookie=cookie))["statusCode"] == 404
+    assert '/maand/2026-09.pdf"' in app(event("GET", "/maand/2026-09", cookie=cookie))["body"]
     assert app(event("GET", "/nope", cookie=cookie))["statusCode"] == 404
 
 

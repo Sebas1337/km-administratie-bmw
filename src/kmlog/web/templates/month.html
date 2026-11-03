@@ -43,7 +43,7 @@
   <div><div class="muted">Te declareren</div><div class="big">{{ m.amount_cents|euro }}</div></div>
   <div><div class="muted">Tarief</div><div>{{ m.cents_per_km|euro }} / km</div></div>
   {% if m.odometer_start is not none %}<div><div class="muted">Kilometerstand</div><div>{{ m.odometer_start|km }} → {{ m.odometer_end|km }}</div></div>{% endif %}
-  <div><a class="button secondary" href="/maand/{{ '%04d-%02d'|format(year, month) }}.xlsx">Excel</a></div>
+  <div class="buttons"><a class="button secondary" href="/maand/{{ '%04d-%02d'|format(year, month) }}.xlsx">Excel</a> <a class="button secondary" href="/maand/{{ '%04d-%02d'|format(year, month) }}.pdf">PDF</a></div>
 </div>
 {% if m.rows %}
 <p class="tabs">{% if per_trip %}<a href="{{ here }}">Per dag</a> · <strong>Per rit</strong>{% else %}<strong>Per dag</strong> · <a href="{{ here }}?weergave=ritten">Per rit</a>{% endif %}</p>

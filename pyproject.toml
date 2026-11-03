@@ -16,6 +16,7 @@ kmlog = "kmlog.cli:main"
 dev = [
     "boto3>=1.35",
     "moto[dynamodb,s3,secretsmanager,ses]>=5",
+    "pypdf>=5",
     "pytest>=8",
     "ruff>=0.8",
 ]
